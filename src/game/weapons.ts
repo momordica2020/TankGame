@@ -256,7 +256,7 @@ export function fireWeapon(
       projectiles.push(createProjectile(originX, originY, baseAngle + spread, weapon, level));
     }
   } else if (weapon.id === 'drone') {
-    const droneCount = Math.min(level + 3, 10);
+    const droneCount = Math.min(4 + level * 2, 16);
     // 用持续旋转的环绕角度，避免目标变化导致位置跳跃
     const orbit = player.droneOrbit;
     for (let i = 0; i < droneCount; i++) {

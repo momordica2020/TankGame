@@ -43,6 +43,10 @@ export interface Player extends Entity {
     burn: number;
     pierce: number;
   };
+  passives: {
+    regen: number;
+    vampirism: number;
+  };
   facing: number;
   targetFacing: number; // 缓急转向的目标朝向
   walkCycle: number;
@@ -152,6 +156,8 @@ export interface Pickup extends Entity {
   type: PickupType;
   value: number;
   magnetTarget: number | null;
+  life: number;
+  maxLife: number;
 }
 
 export interface Particle {
@@ -305,6 +311,7 @@ export interface GameState {
   showUpgrade: boolean;
   isMobile: boolean;
   mobileZoom: number;
+  pendingStartUpgrades: number;
   touchInput: {
     active: boolean;
     startX: number;
@@ -340,6 +347,7 @@ export interface GameState {
   deathAnim: number;
   deathDebris: { x: number; y: number; vx: number; vy: number; rot: number; vr: number; size: number; color: string; life?: number }[];
   bossSpawnCount: number;
+  waveDifficultyMult: number;
   bossBombs: { x: number; y: number; timer: number; maxTimer: number; radius: number; damage: number; active: boolean }[];
 }
 

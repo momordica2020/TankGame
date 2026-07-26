@@ -4,10 +4,12 @@ import { randRange, randPick } from './math';
 const MAX_PARTICLES = 2000;
 let pool: Particle[] = [];
 let particleSpawnRate = 1.0; // 粒子生成倍率（移动端降低）
+let heavyEffectRate = 1.0; // 重型特效倍率（爆炸/血液/魔法爆发等，移动端更低）
 
 export function initParticles() {
   pool = [];
   particleSpawnRate = 1.0;
+  heavyEffectRate = 1.0;
   for (let i = 0; i < MAX_PARTICLES; i++) {
     pool.push({
       x: 0, y: 0, vx: 0, vy: 0,
@@ -18,6 +20,10 @@ export function initParticles() {
 
 export function setParticleSpawnRate(rate: number) {
   particleSpawnRate = Math.max(0.05, Math.min(1.0, rate));
+}
+
+export function setHeavyEffectRate(rate: number) {
+  heavyEffectRate = Math.max(0.05, Math.min(1.0, rate));
 }
 
 function spawn(): Particle | null {
@@ -77,45 +83,47 @@ export function spawnMuzzleFlash(x: number, y: number, angle: number, color: str
 }
 
 export function spawnExplosion(x: number, y: number, size: number) {
+  const h = heavyEffectRate;
   const colors = ['#ff3300', '#ff8800', '#ffcc00', '#ff6600', '#ffffff', '#ffaa22'];
-  spawnParticles(x, y, Math.floor(size * 3), colors, 80, 450, 2, 8, 0.2, 0.7);
-  spawnParticles(x, y, Math.floor(size * 1.5), ['#666666', '#555555', '#777777', '#444444'], 30, 180, 2, 6, 0.4, 1.0);
-  spawnParticles(x, y, Math.floor(size * 0.8), ['#ffffff', '#ffffaa', '#ffff88'], 150, 350, 1, 3, 0.1, 0.3);
+  spawnParticles(x, y, Math.floor(size * 3 * h), colors, 80, 450, 2, 8, 0.2, 0.7);
+  spawnParticles(x, y, Math.floor(size * 1.5 * h), ['#666666', '#555555', '#777777', '#444444'], 30, 180, 2, 6, 0.4, 1.0);
+  spawnParticles(x, y, Math.floor(size * 0.8 * h), ['#ffffff', '#ffffaa', '#ffff88'], 150, 350, 1, 3, 0.1, 0.3);
 }
 
 export function spawnBigExplosion(x: number, y: number) {
+  const h = heavyEffectRate;
   const colors = ['#ff2200', '#ff6600', '#ffaa00', '#ffdd00', '#ffffff', '#ff4444'];
-  spawnParticles(x, y, 120, colors, 100, 500, 3, 10, 0.3, 1.0);
-  spawnParticles(x, y, 60, ['#555555', '#666666', '#777777', '#444444'], 40, 200, 3, 8, 0.6, 1.5);
-  spawnParticles(x, y, 40, ['#ffffff', '#ffffaa'], 200, 400, 2, 5, 0.15, 0.4);
+  spawnParticles(x, y, Math.floor(120 * h), colors, 100, 500, 3, 10, 0.3, 1.0);
+  spawnParticles(x, y, Math.floor(60 * h), ['#555555', '#666666', '#777777', '#444444'], 40, 200, 3, 8, 0.6, 1.5);
+  spawnParticles(x, y, Math.floor(40 * h), ['#ffffff', '#ffffaa'], 200, 400, 2, 5, 0.15, 0.4);
 }
 
 export function spawnBlood(x: number, y: number, amount: number) {
-  spawnParticles(x, y, Math.floor(amount * 1.5), ['#cc0000', '#990000', '#ff2222', '#ff4444', '#aa0000'], 40, 180, 2, 6, 0.2, 0.5);
+  spawnParticles(x, y, Math.floor(amount * 1.5 * heavyEffectRate), ['#cc0000', '#990000', '#ff2222', '#ff4444', '#aa0000'], 40, 180, 2, 6, 0.2, 0.5);
 }
 
 export function spawnExpOrbSparkle(x: number, y: number) {
-  spawnParticles(x, y, 8, ['#44ff88', '#88ffaa', '#00ff66', '#aaffcc'], 30, 100, 1.5, 4, 0.2, 0.5);
+  spawnParticles(x, y, Math.floor(8 * heavyEffectRate), ['#44ff88', '#88ffaa', '#00ff66', '#aaffcc'], 30, 100, 1.5, 4, 0.2, 0.5);
 }
 
 export function spawnHitSpark(x: number, y: number, color: string) {
-  spawnParticles(x, y, 12, [color, '#ffffff', color], 80, 250, 1, 4, 0.1, 0.3);
+  spawnParticles(x, y, Math.floor(12 * heavyEffectRate), [color, '#ffffff', color], 80, 250, 1, 4, 0.1, 0.3);
 }
 
 export function spawnLightning(x: number, y: number) {
-  spawnParticles(x, y, 20, ['#88ccff', '#ffffff', '#aaddff', '#4488ff'], 60, 300, 2, 6, 0.1, 0.3);
+  spawnParticles(x, y, Math.floor(20 * heavyEffectRate), ['#88ccff', '#ffffff', '#aaddff', '#4488ff'], 60, 300, 2, 6, 0.1, 0.3);
 }
 
 export function spawnIceShatter(x: number, y: number) {
-  spawnParticles(x, y, 25, ['#66ccff', '#aaeeff', '#ffffff', '#88ddff'], 50, 250, 2, 6, 0.2, 0.5);
+  spawnParticles(x, y, Math.floor(25 * heavyEffectRate), ['#66ccff', '#aaeeff', '#ffffff', '#88ddff'], 50, 250, 2, 6, 0.2, 0.5);
 }
 
 export function spawnMagicBurst(x: number, y: number, color: string) {
-  spawnParticles(x, y, 30, [color, '#ffffff', color], 80, 350, 2, 7, 0.2, 0.5);
+  spawnParticles(x, y, Math.floor(30 * heavyEffectRate), [color, '#ffffff', color], 80, 350, 2, 7, 0.2, 0.5);
 }
 
 export function spawnScreenFlash(x: number, y: number) {
-  spawnParticles(x, y, 80, ['#ffffff', '#ffdd44', '#ffaa00', '#ff8800'], 100, 500, 3, 10, 0.3, 0.8);
+  spawnParticles(x, y, Math.floor(80 * heavyEffectRate), ['#ffffff', '#ffdd44', '#ffaa00', '#ff8800'], 100, 500, 3, 10, 0.3, 0.8);
 }
 
 // 冲天光柱 + 地面震荡环（炮塔升级 / 高级拾取 / 精英击杀）
@@ -140,7 +148,7 @@ export function makeLightPillar(
 
 export function spawnLightPillarBurst(x: number, y: number, color: string) {
   // 配套粒子爆发（让光柱更醒目）
-  spawnParticles(x, y, 26, [color, '#ffffff', color], 80, 320, 2, 6, 0.25, 0.6);
+  spawnParticles(x, y, Math.floor(26 * heavyEffectRate), [color, '#ffffff', color], 80, 320, 2, 6, 0.25, 0.6);
 }
 
 export function updateParticles(dt: number) {

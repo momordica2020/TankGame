@@ -7,9 +7,9 @@ interface HUDProps {
 
 export default function HUD({ state }: HUDProps) {
   const p = state.player;
-  const hpRatio = Math.max(0, p.hp / p.maxHp);
-  const expRatio = Math.max(0, p.exp / p.maxExp);
-  const armorRatio = p.maxArmor > 0 ? p.armor / p.maxArmor : 0;
+  const hpRatio = Math.max(0, Math.min(1, p.hp / p.maxHp));
+  const expRatio = Math.max(0, Math.min(1, p.exp / p.maxExp));
+  const armorRatio = p.maxArmor > 0 ? Math.max(0, Math.min(1, p.armor / p.maxArmor)) : 0;
 
   return (
     <div className="absolute inset-0 pointer-events-none">
@@ -25,8 +25,8 @@ export default function HUD({ state }: HUDProps) {
             </div>
             <div className="relative w-[80%] h-6 bg-black/70 rounded-sm border border-red-900/80 overflow-hidden">
               <div 
-                className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-900 via-red-600 to-red-500 transition-all duration-100"
-                style={{ width: `${bossHpRatio * 100}%` }}
+                className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-900 via-red-600 to-red-500 transition-[width] duration-100"
+                style={{ width: `${Math.min(1, bossHpRatio) * 100}%` }}
               />
               <div className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold drop-shadow-md">
                 {Math.ceil(boss.hp)} / {Math.floor(boss.maxHp)}
@@ -39,10 +39,10 @@ export default function HUD({ state }: HUDProps) {
       {/* 底部横贯式状态栏 */}
       <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-0.5 bg-black/40 backdrop-blur-sm border-t border-white/10">
         {/* 血条 - 横贯全屏 */}
-        <div className="relative w-full h-5">
+        <div className="relative w-full h-5 overflow-hidden">
           <div className="absolute inset-0 bg-black/60" />
           <div
-            className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-700 via-red-500 to-red-400 transition-all"
+            className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-700 via-red-500 to-red-400 transition-[width] duration-75"
             style={{ width: `${hpRatio * 100}%` }}
           />
           <div className="absolute inset-0 flex items-center justify-between px-3">
@@ -65,10 +65,10 @@ export default function HUD({ state }: HUDProps) {
 
         {/* 护甲条 - 横贯全屏 */}
         {p.maxArmor > 0 && (
-          <div className="relative w-full h-2.5">
+          <div className="relative w-full h-2.5 overflow-hidden">
             <div className="absolute inset-0 bg-black/60" />
             <div
-              className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-700 via-blue-500 to-cyan-400 transition-all"
+              className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-700 via-blue-500 to-cyan-400 transition-[width] duration-75"
               style={{ width: `${armorRatio * 100}%` }}
             />
             <div className="absolute inset-0 flex items-center justify-between px-3">
@@ -81,10 +81,10 @@ export default function HUD({ state }: HUDProps) {
         )}
 
         {/* 经验条 - 横贯全屏 */}
-        <div className="relative w-full h-2">
+        <div className="relative w-full h-2 overflow-hidden">
           <div className="absolute inset-0 bg-black/60" />
           <div
-            className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-700 via-emerald-500 to-lime-400 transition-all"
+            className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-700 via-emerald-500 to-lime-400 transition-[width] duration-75"
             style={{ width: `${expRatio * 100}%` }}
           />
           <div className="absolute inset-0 flex items-center justify-between px-3">

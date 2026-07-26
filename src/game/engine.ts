@@ -6,7 +6,7 @@ import type {
 import { WEAPON_CONFIGS, createProjectile, createEnemyProjectile, fireWeapon, findNearestEnemyId, selectTarget, getWeaponMuzzleWorld, getWeaponMountWorld, getSlotMount } from './weapons';
 import { dist, angleTo, normalize, clamp, randRange, randInt, randPick, circlePolygonCollision, pointInPolygon } from './math';
 import {
-  initParticles, updateParticles, setParticleSpawnRate,
+  initParticles, updateParticles, setParticleSpawnRate, setHeavyEffectRate,
   spawnExplosion, spawnBigExplosion, spawnBlood, spawnExpOrbSparkle,
   spawnHitSpark, spawnMuzzleFlash, spawnLightning, spawnIceShatter,
   spawnMagicBurst, spawnScreenFlash, spawnParticles,
@@ -131,14 +131,43 @@ export function createGameState(startWeapon: string): GameState {
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     || ('ontouchstart' in window && (typeof window !== 'undefined' && window.innerWidth < 900))
   );
-  if (isMobile) setParticleSpawnRate(0.25); // 移动端粒子数降至 25%
+  if (isMobile) {
+    setParticleSpawnRate(0.12); // 移动端粒子数降至 12%
+    setHeavyEffectRate(0.15);  // 重型特效（爆炸/血液/魔法等）降至 15%
+  }
   const mobileZoom = 1;
 
   const terrains: Terrain[] = generateTerrains(mapWidth, mapHeight);
 
+  // 确保玩家出生点不卡在地形里
+  let spawnX = mapWidth / 2;
+  let spawnY = mapHeight / 2;
+  const playerSpawnRadius = 50;
+  let spawnBlocked = true;
+  let spawnAttempts = 0;
+  while (spawnBlocked && spawnAttempts < 60) {
+    spawnBlocked = false;
+    for (const t of terrains) {
+      if (t.type !== 'obstacle') continue;
+      if (circlePolygonCollision(spawnX, spawnY, playerSpawnRadius, t.x, t.y, t.vertices)) {
+        spawnBlocked = true;
+        break;
+      }
+    }
+    if (spawnBlocked) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 60 + spawnAttempts * 15;
+      spawnX = mapWidth / 2 + Math.cos(a) * r;
+      spawnY = mapHeight / 2 + Math.sin(a) * r;
+      spawnAttempts++;
+    }
+  }
+  spawnX = clamp(spawnX, 100, mapWidth - 100);
+  spawnY = clamp(spawnY, 100, mapHeight - 100);
+
   const player: Player = {
     id: nextId++,
-    x: mapWidth / 2, y: mapHeight / 2,
+    x: spawnX, y: spawnY,
     vx: 0, vy: 0,
     radius: 44,
     hp: 100, maxHp: 100, active: true,
@@ -154,6 +183,7 @@ export function createGameState(startWeapon: string): GameState {
     shieldTimer: 0,
     berserkTimer: 0,
     enchants: { freeze: 0, burn: 0, pierce: 0 },
+    passives: { regen: 0, vampirism: 0 },
     facing: 0,
     targetFacing: 0,
     walkCycle: 0,
@@ -184,6 +214,7 @@ export function createGameState(startWeapon: string): GameState {
     showUpgrade: false,
     isMobile,
     mobileZoom,
+    pendingStartUpgrades: 0,
     touchInput: { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, joyX: 0, joyY: 0 },
     upgradeOptions: [],
     screenShake: 0,
@@ -212,6 +243,7 @@ export function createGameState(startWeapon: string): GameState {
     deathDebris: [],
     bossBombs: [],
     bossSpawnCount: 0,
+    waveDifficultyMult: 1,
   };
 }
 
@@ -224,6 +256,16 @@ function makeIrregularPoly(sides: number, baseR: number, jitter: number): { x: n
     verts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
   }
   return verts;
+}
+
+function darkenColor(hex: string, amount: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const nr = Math.max(0, Math.min(255, Math.round(r * (1 - amount))));
+  const ng = Math.max(0, Math.min(255, Math.round(g * (1 - amount * 1.2))));
+  const nb = Math.max(0, Math.min(255, Math.round(b * (1 - amount * 1.5))));
+  return '#' + nr.toString(16).padStart(2, '0') + ng.toString(16).padStart(2, '0') + nb.toString(16).padStart(2, '0');
 }
 
 function generateTerrains(mapW: number, mapH: number): Terrain[] {
@@ -475,15 +517,16 @@ function updatePlayer(state: GameState, dt: number) {
   }
   if (moving) {
     p.walkCycle += dt * 12;
-    // 尘土效果
+    // 尘土效果（移动端大幅降低频率）
     p.dustTimer -= dt;
+    const dustInterval = state.isMobile ? 0.35 : 0.06;
     if (p.dustTimer <= 0) {
-      p.dustTimer = 0.06;
+      p.dustTimer = dustInterval;
       const back = p.facing + Math.PI;
       const offX = Math.cos(back) * p.radius * 0.4 + randRange(-8, 8);
       const offY = Math.sin(back) * p.radius * 0.4 + randRange(-8, 8);
       spawnParticles(
-        p.x + offX, p.y + offY, 4,
+        p.x + offX, p.y + offY, state.isMobile ? 2 : 4,
         ['#8a7a5a', '#a09070', '#6b5d40', '#7a6c4a'],
         20, 60, 3, 8, 0.3, 0.6
       );
@@ -525,8 +568,8 @@ function updatePlayer(state: GameState, dt: number) {
   p.y = clamp(p.y, p.radius, state.mapHeight - p.radius);
 
   // 被动 - 纳米修复
-  if (p.upgrades.includes('regen')) {
-    p.hp = Math.min(p.maxHp, p.hp + 2 * dt);
+  if (p.passives.regen > 0) {
+    p.hp = Math.min(p.maxHp, p.hp + p.passives.regen * 6 * dt);
   }
 }
 
@@ -655,14 +698,18 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
       break;
     }
     case 'mine': {
-      // 在玩家周围布设地雷，数量随等级提升
-      const mineCount = 1 + Math.floor(lvl / 1.5);
+      // 在玩家周围布设地雷，数量随等级显著提升
+      const mineCount = 2 + lvl * 2;
+      const mineLifetime = 12 + lvl * 1.5;
       for (let i = 0; i < mineCount; i++) {
         const ang = randRange(0, Math.PI * 2);
-        const r = randRange(40, 110);
+        const r = randRange(40, 130);
         const mx = p.x + Math.cos(ang) * r;
         const my = p.y + Math.sin(ang) * r;
-        state.summons.push(makeSummon('turret', { ...cfg }, lvl, mx, my, true));
+        const mine = makeSummon('turret', { ...cfg }, lvl, mx, my, true);
+        mine.lifetime = mineLifetime;
+        mine.maxLifetime = mineLifetime;
+        state.summons.push(mine);
         state.lightPillars.push(makeLightPillar(mx, my, cfg.color,
           { baseRadius: 16, beamHeight: 160, ringMax: 70, life: 0.8 }));
       }
@@ -670,6 +717,7 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
     }
     case 'flamethrower': {
       const baseAngle = angleTo(muzzle.x, muzzle.y, targetX, targetY);
+      const coneAngle = cfg.spreadAngle;
       state.flameEffects.push({
         x: muzzle.x, y: muzzle.y, angle: baseAngle, radius: cfg.range,
         life: 0.15, active: true,
@@ -681,7 +729,7 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
         const a = angleTo(muzzle.x, muzzle.y, e.x, e.y);
         let diff = Math.abs(a - baseAngle);
         if (diff > Math.PI) diff = Math.PI * 2 - diff;
-        if (diff < 0.35) {
+        if (diff < coneAngle) {
           damageEnemy(state, e, cfg.damage * (1 + (lvl - 1) * 0.3), cfg.color);
         }
       }
@@ -689,8 +737,10 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
     }
     case 'sword': {
       const baseAngle = angleTo(muzzle.x, muzzle.y, targetX, targetY);
+      // 剑的弧角随等级扩大，每级 +15%
+      const swordArc = Math.PI * 0.75 * (1 + (lvl - 1) * 0.15);
       state.meleeEffects.push({
-        x: muzzle.x, y: muzzle.y, angle: baseAngle, arc: Math.PI * 0.75, radius: cfg.range,
+        x: muzzle.x, y: muzzle.y, angle: baseAngle, arc: swordArc, radius: cfg.range,
         life: 0.18, maxLife: 0.18, active: true, hits: new Set(),
       });
       for (const e of state.enemies) {
@@ -700,7 +750,7 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
         const a = angleTo(muzzle.x, muzzle.y, e.x, e.y);
         let diff = Math.abs(a - baseAngle);
         if (diff > Math.PI) diff = Math.PI * 2 - diff;
-        if (diff < Math.PI * 0.375) {
+        if (diff < swordArc / 2) {
           damageEnemy(state, e, cfg.damage * (1 + (lvl - 1) * 0.3), cfg.color);
           const kx = normalize(e.x - muzzle.x, e.y - muzzle.y);
           e.x += kx.x * 30;
@@ -710,13 +760,13 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
       break;
     }
     case 'turret': {
-      // 部署炮塔：定期在玩家附近放置固定炮塔，数量随等级提升
+      // 部署炮塔：定期在玩家附近放置固定炮塔，数量随等级大幅提升
       const existing = state.summons.filter((s) => s.active && s.type === 'turret' && s.weapon.id === 'turret');
       const realTurrets = existing.filter((s) => !s.orbitRadius); // 固定炮塔
-      const maxTurrets = Math.min(2 + lvl, 10);
+      const maxTurrets = Math.min(3 + lvl * 2, 16);
       if (realTurrets.length < maxTurrets) {
         const ang = randRange(0, Math.PI * 2);
-        const r = randRange(70, 130);
+        const r = randRange(70, 150);
         const tx = p.x + Math.cos(ang) * r;
         const ty = p.y + Math.sin(ang) * r;
         const s = makeSummon('turret', { ...cfg }, lvl, tx, ty, false);
@@ -729,9 +779,9 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
       break;
     }
     case 'shield_drone': {
-      // 维持 N 个护盾浮游机
+      // 护盾浮游机：数量随等级大幅提升
       const existing = state.summons.filter((s) => s.active && s.type === 'shield_drone');
-      const want = Math.min(2 + lvl, 8);
+      const want = Math.min(3 + lvl * 2, 14);
       if (existing.length < want) {
         const s = makeSummon('shield_drone', { ...cfg }, lvl, p.x, p.y, false);
         s.orbitRadius = 55;
@@ -745,9 +795,9 @@ function fireWeaponByType(state: GameState, w: WeaponInstance, wIdx: number, tgt
       break;
     }
     case 'auto_turret': {
-      // 跟随环绕炮塔：维持 N 个
+      // 跟随环绕炮塔：数量随等级大幅提升
       const existing = state.summons.filter((s) => s.active && s.type === 'auto_turret');
-      const want = Math.min(2 + lvl, 8);
+      const want = Math.min(3 + lvl * 2, 12);
       if (existing.length < want) {
         const s = makeSummon('auto_turret', { ...cfg }, lvl, p.x, p.y, false);
         s.orbitRadius = 80;
@@ -882,27 +932,47 @@ function castIceWall(state: GameState, cfg: WeaponConfig, lvl: number) {
 function castSkeleton(state: GameState, cfg: WeaponConfig, lvl: number) {
   const p = state.player;
   const existing = state.summons.filter((s) => s.active && s.type === 'skeleton');
-  const want = Math.min(2 + lvl * 2, 10);
+  // 数量随等级大幅提升，每级接近翻倍增长
+  const want = Math.min(3 + lvl * 3, 16);
   if (existing.length >= want) return;
   const ang = randRange(0, Math.PI * 2);
-  const r = randRange(40, 80);
+  const r = randRange(40, 100);
   const sx = p.x + Math.cos(ang) * r;
   const sy = p.y + Math.sin(ang) * r;
   const sk = makeSummon('skeleton', { ...cfg }, lvl, sx, sy, false);
-  sk.lifetime = 12;
-  sk.maxLifetime = 12;
+  sk.lifetime = 15;
+  sk.maxLifetime = 15;
   state.summons.push(sk);
   spawnMagicBurst(sx, sy, cfg.color);
 }
 
 // ---- 天罚光束 ----
 function castBeamLaser(state: GameState, cfg: WeaponConfig, lvl: number, ox: number, oy: number) {
-  // 光束数量随等级提升：3级起2道，5级起3道
-  const beamCount = lvl >= 5 ? 3 : lvl >= 3 ? 2 : 1;
-  const spreadAngle = 0.25; // 光束间夹角
+  // 光束数量随等级大幅提升：2级起2道，4级起3道，6级起4道
+  const beamCount = lvl >= 6 ? 4 : lvl >= 4 ? 3 : lvl >= 2 ? 2 : 1;
+  const spreadAngle = 0.2; // 光束间夹角
 
-  // 找一个主目标方向
-  const targetId = findNearestEnemyId(ox, oy, state.enemies, cfg.range);
+  // 优先寻找boss和精英怪等高价值目标
+  let targetId: number | null = null;
+  let bestPriority = -1;
+  let bestDist = Infinity;
+  for (const e of state.enemies) {
+    if (!e.active) continue;
+    const d = dist(e.x, e.y, ox, oy);
+    if (d > cfg.range) continue;
+    let priority = 0;
+    if (e.type === 'boss') priority = 100;
+    else if (e.type.startsWith('elite')) priority = 50;
+    if (priority > bestPriority || (priority === bestPriority && d < bestDist)) {
+      bestPriority = priority;
+      bestDist = d;
+      targetId = e.id;
+    }
+  }
+  // 如果没有找到高价值目标，找最近的敌人
+  if (targetId === null) {
+    targetId = findNearestEnemyId(ox, oy, state.enemies, cfg.range);
+  }
   let baseAng = -Math.PI / 2;
   let tx = ox, ty = oy - 100;
   if (targetId !== null) {
@@ -1347,22 +1417,23 @@ function updateEnemies(state: GameState, dt: number) {
 
     // ---- Boss 技能系统 ----
     if (e.type === 'boss') {
-      if (e.bossSkillTimer === undefined) e.bossSkillTimer = 4;
-      if (e.bossBombTimer === undefined) e.bossBombTimer = 6;
+      if (e.bossSkillTimer === undefined) e.bossSkillTimer = 0.5 + Math.random() * 0.5;
+      if (e.bossBombTimer === undefined) e.bossBombTimer = 2 + Math.random() * 1;
       if (e.bossChargeState === undefined) e.bossChargeState = 'idle';
+      if (e.bossChargeTimer === undefined) e.bossChargeTimer = 3 + Math.random() * 1;
 
       // 技能1：东方Project风格弹幕（多种模式轮替，数量多、速度慢）
       e.bossSkillTimer -= dt;
       if (e.bossSkillTimer <= 0) {
-        e.bossSkillTimer = 1.8 + Math.random() * 1.0;
+        e.bossSkillTimer = 0.9 + Math.random() * 0.7;
         // 弹幕模式池
         const pattern = Math.floor(Math.random() * 7);
         const baseSpeed = 110; // 弹幕整体偏慢，靠密度压制
 
         if (pattern === 0) {
-          // 模式1：双层环形弹幕（48+36发）
-          const count1 = 48;
-          const count2 = 36;
+          // 模式1：双层环形弹幕（72+54发）
+          const count1 = 72;
+          const count2 = 54;
           const startAng = Math.random() * Math.PI * 2;
           for (let i = 0; i < count1; i++) {
             const a = startAng + (i / count1) * Math.PI * 2;
@@ -1373,21 +1444,21 @@ function updateEnemies(state: GameState, dt: number) {
             state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, baseSpeed * 0.7, 8, '#ffaa22'));
           }
         } else if (pattern === 1) {
-          // 模式2：扇形弹幕+追踪（大扇形21发+中央瞄准弹）
+          // 模式2：扇形弹幕+追踪（大扇形32发+中央瞄准弹）
           const ang = angleTo(e.x, e.y, p.x, p.y);
-          const fanCount = 21;
-          const fanSpread = Math.PI * 0.8;
+          const fanCount = 32;
+          const fanSpread = Math.PI * 0.9;
           for (let i = 0; i < fanCount; i++) {
             const a = ang - fanSpread / 2 + (i / (fanCount - 1)) * fanSpread;
             state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, baseSpeed * 0.95, 10, '#cc33ff'));
           }
-          // 中央3发快速瞄准弹
-          for (let i = -1; i <= 1; i++) {
-            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, ang + i * 0.08, baseSpeed * 1.4, 12, '#ff0088'));
+          // 中央5发快速瞄准弹
+          for (let i = -2; i <= 2; i++) {
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, ang + i * 0.06, baseSpeed * 1.4, 12, '#ff0088'));
           }
         } else if (pattern === 2) {
-          // 模式3：螺旋弹幕（双螺旋各18发，旋转扩散）
-          const spiralCount = 18;
+          // 模式3：螺旋弹幕（双螺旋各27发，旋转扩散）
+          const spiralCount = 27;
           const spiralAng = Math.random() * Math.PI * 2;
           for (let i = 0; i < spiralCount; i++) {
             const t = i / spiralCount;
@@ -1399,7 +1470,7 @@ function updateEnemies(state: GameState, dt: number) {
           }
         } else if (pattern === 3) {
           // 模式4：圆形散射+随机偏移（模拟乱弹）
-          const total = 60;
+          const total = 90;
           for (let i = 0; i < total; i++) {
             const a = (i / total) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
             const spd = baseSpeed * (0.75 + Math.random() * 0.5);
@@ -1408,7 +1479,7 @@ function updateEnemies(state: GameState, dt: number) {
         } else if (pattern === 4) {
           // 模式5：三方向波浪弹（左右中三路，每路扇形，密度高）
           const ang = angleTo(e.x, e.y, p.x, p.y);
-          const waveCount = 9;
+          const waveCount = 14;
           for (let w = -1; w <= 1; w++) {
             const baseA = ang + w * 0.55;
             for (let i = 0; i < waveCount; i++) {
@@ -1419,7 +1490,7 @@ function updateEnemies(state: GameState, dt: number) {
           }
         } else if (pattern === 5) {
           // 模式6：十字+X字弹幕组合（密集激光线）
-          const lineCount = 16;
+          const lineCount = 24;
           for (let i = 0; i < lineCount; i++) {
             const t = i / lineCount;
             for (let d = 0; d < 8; d++) {
@@ -1429,9 +1500,9 @@ function updateEnemies(state: GameState, dt: number) {
             }
           }
         } else {
-          // 模式7：花瓣环形弹幕（6瓣各9发，图案优美）
-          const petalCount = 6;
-          const perPetal = 9;
+          // 模式7：花瓣环形弹幕（9瓣各13发，图案优美）
+          const petalCount = 9;
+          const perPetal = 13;
           const startAng = Math.random() * Math.PI * 2;
           for (let pt = 0; pt < petalCount; pt++) {
             const centerA = startAng + (pt / petalCount) * Math.PI * 2;
@@ -1441,9 +1512,9 @@ function updateEnemies(state: GameState, dt: number) {
               state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, spd, 8, '#ff5599'));
             }
           }
-          // 中央6发快弹
-          for (let i = 0; i < 6; i++) {
-            const a = startAng + (i / 6) * Math.PI * 2;
+          // 中央9发快弹
+          for (let i = 0; i < 9; i++) {
+            const a = startAng + (i / 9) * Math.PI * 2;
             state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, baseSpeed * 1.3, 10, '#ffffff'));
           }
         }
@@ -1453,7 +1524,7 @@ function updateEnemies(state: GameState, dt: number) {
       // 技能2：定点炸弹
       e.bossBombTimer -= dt;
       if (e.bossBombTimer <= 0) {
-        e.bossBombTimer = 7 + Math.random() * 3;
+        e.bossBombTimer = 4 + Math.random() * 2;
         // 在玩家附近放置3-5个炸弹
         const bombCount = 3 + Math.floor(Math.random() * 3);
         for (let i = 0; i < bombCount; i++) {
@@ -1469,7 +1540,7 @@ function updateEnemies(state: GameState, dt: number) {
 
       // 技能3：直线蓄力冲锋
       if (e.bossChargeState === 'idle') {
-        if (e.bossChargeTimer === undefined) e.bossChargeTimer = 8;
+        if (e.bossChargeTimer === undefined) e.bossChargeTimer = 5;
         e.bossChargeTimer -= dt;
         if (e.bossChargeTimer <= 0) {
           // 开始蓄力
@@ -1499,7 +1570,7 @@ function updateEnemies(state: GameState, dt: number) {
         }
         if (e.bossChargeTimer <= 0) {
           e.bossChargeState = 'idle';
-          e.bossChargeTimer = 6 + Math.random() * 3;
+          e.bossChargeTimer = 3 + Math.random() * 2;
           e.bossChargeDir = undefined;
         }
       }
@@ -1729,6 +1800,10 @@ function damagePlayer(state: GameState, dmg: number) {
 
 function damageEnemy(state: GameState, e: Enemy, dmg: number, color: string) {
   if (!e.active) return;
+  // Boss冲锋蓄力和冲锋过程中无敌
+  if (e.type === 'boss' && (e.bossChargeState === 'charging' || e.bossChargeState === 'dashing')) {
+    return;
+  }
   e.hp -= dmg;
   e.flashTimer = 0.08;
   spawnHitSpark(e.x, e.y, color);
@@ -1831,18 +1906,32 @@ function killEnemy(state: GameState, e: Enemy) {
 
   // 经验掉落（受动态经验系数影响），按敌人难度分级：小怪少小，大怪多大团
   const expVal = Math.max(1, Math.round(e.expValue * state.dynamicExpMult));
-  const dropCfg = getExpDropConfig(e.type, expVal);
+  let dropCfg = getExpDropConfig(e.type, expVal);
+  // Boss阶段：经验球掉率下降，但单球价值上升
+  const stage = state.bossSpawnCount || 0;
+  if (stage > 0) {
+    const dropCountMult = Math.pow(0.82, stage);
+    const perValueMult = 1 / dropCountMult;
+    const newCount = Math.max(1, Math.round(dropCfg.count * dropCountMult));
+    const newPerValue = Math.ceil(dropCfg.perValue * perValueMult);
+    const newRadius = dropCfg.perRadius + Math.min(stage * 0.5, 3);
+    dropCfg = { count: newCount, perValue: newPerValue, perRadius: newRadius };
+  }
   for (let i = 0; i < dropCfg.count; i++) {
     const ang = (i / dropCfg.count) * Math.PI * 2 + randRange(-0.3, 0.3);
     const r = randRange(0, e.radius * 0.8);
     const px = e.x + Math.cos(ang) * r;
     const py = e.y + Math.sin(ang) * r;
     const spd = randRange(30, 80);
+    // 经验球越小消失越快：5px→8秒，9px→14秒，12px→20秒
+    const r0 = dropCfg.perRadius;
+    const lifeTime = r0 <= 5 ? 8 : r0 <= 7 ? 12 : r0 <= 10 ? 16 : 22;
     state.pickups.push({
       id: nextId++, x: px, y: py,
       vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
-      radius: dropCfg.perRadius, hp: 1, maxHp: 1, active: true,
+      radius: r0, hp: 1, maxHp: 1, active: true,
       type: 'exp', value: dropCfg.perValue, magnetTarget: null,
+      life: lifeTime, maxLife: lifeTime,
     });
   }
 
@@ -1853,22 +1942,25 @@ function killEnemy(state: GameState, e: Enemy) {
       id: nextId++, x: e.x, y: e.y, vx: 0, vy: 0,
       radius: 11, hp: 1, maxHp: 1, active: true,
       type: 'health', value: 20, magnetTarget: null,
+      life: 25, maxLife: 25,
     });
   }
 
   // 精英/Boss 必掉特殊拾取物
   if (e.isElite || e.type === 'elite' || e.type === 'boss') {
     const dropType: PickupType = randPick(['bomb', 'vacuum', 'shield_pickup', 'screen_clear'] as const);
+    // 特殊道具存在时间较长：30秒
     state.pickups.push({
       id: nextId++, x: e.x, y: e.y, vx: 0, vy: 0,
       radius: 15, hp: 1, maxHp: 1, active: true,
       type: dropType, value: 0, magnetTarget: null,
+      life: 35, maxLife: 35,
     });
   }
 
   // 吸血被动
-  if (state.player.upgrades.includes('vampirism')) {
-    state.player.hp = Math.min(state.player.maxHp, state.player.hp + 3);
+  if (state.player.passives.vampirism > 0) {
+    state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1 + state.player.passives.vampirism);
   }
 }
 
@@ -1877,6 +1969,12 @@ function updatePickups(state: GameState, dt: number) {
   const p = state.player;
   for (const pk of state.pickups) {
     if (!pk.active) continue;
+    // 生命周期减少，过期消失
+    pk.life -= dt;
+    if (pk.life <= 0) {
+      pk.active = false;
+      continue;
+    }
     pk.x += pk.vx * dt;
     pk.y += pk.vy * dt;
     pk.vx *= 0.92;
@@ -2142,6 +2240,16 @@ function updateSpawning(state: GameState, dt: number) {
   // 平滑过渡
   state.dynamicExpMult += (targetExp - state.dynamicExpMult) * Math.min(1, dt * 0.5);
 
+  // 3.5) 动态波次难度：击杀过快时提升怪物强度，防止无脑挂机
+  let targetDiff = 1.0;
+  if (killRate > 70) {
+    targetDiff = 1 + (killRate - 70) / 100;
+  } else if (killRate < 30 && densityRatio < 0.3) {
+    targetDiff = Math.max(0.7, 0.85 + killRate / 200);
+  }
+  targetDiff = clamp(targetDiff, 0.7, 2.0);
+  state.waveDifficultyMult += (targetDiff - state.waveDifficultyMult) * Math.min(1, dt * 0.15);
+
   // 4) 持续刷新：少量基础敌人持续涌入（填补清怪空白，保持节奏感）— 小怪数量翻倍
   state.continuousSpawnTimer -= dt;
   if (state.continuousSpawnTimer <= 0) {
@@ -2241,7 +2349,7 @@ function createEnemyAt(state: GameState, type: EnemyType, x: number, y: number):
     splitter:     { hp: 100 + wave * 12,   speed: 55 + wave * 0.8,   damage: 8 + wave * 0.4,   exp: 12, radius: 20, color: '#6d28d9', ranged: false, prefDist: 0,   projSpeed: 0,   projDmg: 0,                 atkCd: 1.2 },
     splitter_small:{ hp: 35 + wave * 5,    speed: 95 + wave * 1.2,   damage: 4 + wave * 0.2,   exp: 3,  radius: 11, color: '#7c3aed', ranged: false, prefDist: 0,   projSpeed: 0,   projDmg: 0,                 atkCd: 0.9 },
     elite:        { hp: 420 + wave * 42,   speed: 65 + wave * 0.8,   damage: 14 + wave * 0.5,  exp: 30, radius: 26, color: '#881337', ranged: false, prefDist: 0,   projSpeed: 0,   projDmg: 0,                 atkCd: 1.2 },
-    boss:         { hp: 1600 + wave * 140 + (state.bossSpawnCount || 0) * 1200,   speed: 50 + wave * 0.3,   damage: 22 + wave * 0.8 + (state.bossSpawnCount || 0) * 8,  exp: 100, radius: 88, color: '#7f1d1d', ranged: false, prefDist: 0,   projSpeed: 0,   projDmg: 0,                 atkCd: 1.5 },
+    boss:         { hp: 1600 + wave * 140,   speed: 50 + wave * 0.3,   damage: 22 + wave * 0.8,  exp: 100, radius: 88, color: '#7f1d1d', ranged: false, prefDist: 0,   projSpeed: 0,   projDmg: 0,                 atkCd: 1.5 },
     shooter:      { hp: 45 + wave * 5,     speed: 55 + wave * 0.8,   damage: 4 + wave * 0.2,   exp: 10, radius: 14, color: '#7c3aed', ranged: true,  prefDist: 280, projSpeed: 200, projDmg: 3 + wave * 0.3,    atkCd: 2.5 },
     sniper:       { hp: 55 + wave * 6,     speed: 42 + wave * 0.3,   damage: 6 + wave * 0.3,   exp: 15, radius: 13, color: '#be123c', ranged: true,  prefDist: 480, projSpeed: 420, projDmg: 8 + wave * 0.5,    atkCd: 4.5 },
     shotgunner:   { hp: 65 + wave * 7,     speed: 50 + wave * 0.6,   damage: 5 + wave * 0.2,   exp: 12, radius: 15, color: '#991b1b', ranged: true,  prefDist: 200, projSpeed: 180, projDmg: 2 + wave * 0.2,    atkCd: 3.5 },
@@ -2251,6 +2359,24 @@ function createEnemyAt(state: GameState, type: EnemyType, x: number, y: number):
     elite_bomber: { hp: 510 + wave * 51,   speed: 75 + wave * 0.7,   damage: 18 + wave * 0.4,  exp: 45, radius: 46, color: '#831843', ranged: true,  prefDist: 180, projSpeed: 260, projDmg: 10.4 + wave * 0.52,    atkCd: 2.0 },
   };
   const c = configs[type];
+  const stage = state.bossSpawnCount || 0;
+  const diffMult = state.waveDifficultyMult || 1;
+  const hpMult = (1 + stage * 0.25) * diffMult;
+  const dmgMult = (1 + stage * 0.15) * Math.sqrt(diffMult);
+  const spdMult = 1 + stage * 0.08;
+  const expMult = 1 + stage * 0.3;
+  const sizeMult = 1 + stage * 0.05;
+  c.hp = Math.round(c.hp * hpMult);
+  c.damage = c.damage * dmgMult;
+  c.speed = c.speed * spdMult;
+  c.exp = Math.round(c.exp * expMult);
+  c.radius = c.radius * sizeMult;
+  if (c.projDmg > 0) c.projDmg = c.projDmg * dmgMult;
+  if (c.projSpeed > 0) c.projSpeed = c.projSpeed * (1 + stage * 0.05);
+  // 阶段颜色变化：越往后越深越红
+  if (stage > 0) {
+    c.color = darkenColor(c.color, stage * 0.08);
+  }
 
   // 精英怪炮台配置：身上长多个炮台
   let turrets: EnemyTurret[] = [];
@@ -2340,6 +2466,7 @@ function checkLevelUp(state: GameState) {
     p.exp -= p.maxExp;
     p.level += 1;
     p.maxExp = Math.floor(p.maxExp * 1.25) + 8;
+    p.maxHp += 10;
     p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.1);
     // 升级提升拾取范围和吸力
     p.pickupRadius += 12;
@@ -2366,6 +2493,19 @@ export function applyUpgrade(state: GameState, idx: number) {
   p.upgrades.push(opt.id);
   state.showUpgrade = false;
   state.upgradeOptions = [];
+
+  // 如果还有待选的开局升级，继续弹出选择面板
+  if (state.pendingStartUpgrades > 0) {
+    state.pendingStartUpgrades -= 1;
+    if (state.pendingStartUpgrades > 0) {
+      state.upgradeOptions = generateUpgradeOptions(p);
+      state.showUpgrade = true;
+    } else {
+      // 开局升级全部选完，开始第一波倒计时
+      state.waveTimer = 3;
+    }
+  }
+
   // 选择升级后的确认特效
   spawnMagicBurst(p.x, p.y, '#44ff88');
   spawnParticles(p.x, p.y, 15, ['#44ff88', '#88ffaa', '#ffffff'], 60, 200, 1.5, 5, 0.2, 0.4);

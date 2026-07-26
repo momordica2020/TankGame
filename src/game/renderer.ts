@@ -2021,6 +2021,13 @@ function drawPickups(ctx: CanvasRenderingContext2D, state: GameState) {
     if (!pk.active) continue;
     ctx.save();
     ctx.translate(pk.x, pk.y);
+    const lifeRatio = pk.life / pk.maxLife;
+    let alpha = 1;
+    if (lifeRatio < 0.3) {
+      alpha = Math.sin(Date.now() / 125) * 0.5 + 0.5;
+      alpha = Math.max(alpha, 0.3);
+    }
+    ctx.globalAlpha = alpha;
     const pulse = Math.sin(Date.now() / 200) * 0.2 + 0.8;
     const spin = Date.now() / 500;
 

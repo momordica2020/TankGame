@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { createGameState, updateGame, applyUpgrade, bindInput } from '../game/engine';
+import { generateUpgradeOptions } from '../game/upgrades';
 import { renderGame } from '../game/renderer';
 import HUD from '../components/HUD';
 import UpgradePanel from '../components/UpgradePanel';
@@ -40,15 +41,14 @@ export default function Game() {
     let gameState = createGameState(startWeapon);
     gameState.player = applyPermanentUpgrades(gameState.player);
     const startLv = getStartLevel();
-    // 应用开局等级：复用升级属性提升逻辑（不触发升级面板/特效）
-    for (let i = 0; i < startLv; i++) {
-      gameState.player.level += 1;
-      gameState.player.maxExp = Math.floor(gameState.player.maxExp * 1.25) + 8;
-      gameState.player.hp = Math.min(gameState.player.maxHp, gameState.player.hp + gameState.player.maxHp * 0.1);
-      gameState.player.pickupRadius += 12;
+    // 开局等级：进入游戏后依次选择 N 项强化
+    gameState.pendingStartUpgrades = startLv;
+    if (startLv > 0) {
+      gameState.showUpgrade = true;
+      gameState.upgradeOptions = generateUpgradeOptions(gameState.player);
+      // 第一波生成延迟，给玩家选升级的时间
+      gameState.waveTimer = 9999;
     }
-    // 开局等级后补满生命
-    gameState.player.hp = gameState.player.maxHp;
     stateRef.current = gameState;
     lastTimeRef.current = performance.now();
 
