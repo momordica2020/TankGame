@@ -1027,15 +1027,17 @@ function drawEnemies(ctx: CanvasRenderingContext2D, state: GameState) {
       drawEnemyByType(ctx, e, flashWhite, frozen);
     }
 
-    // HP bar
-    const hpRatio = e.hp / e.maxHp;
-    const barW = e.radius * 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    drawRoundedRect(ctx, -barW / 2, -e.radius - 12, barW, 4, 2);
-    ctx.fill();
-    ctx.fillStyle = hpRatio > 0.5 ? '#4ade80' : hpRatio > 0.25 ? '#facc15' : '#ef4444';
-    drawRoundedRect(ctx, -barW / 2, -e.radius - 12, barW * hpRatio, 4, 2);
-    ctx.fill();
+    // HP bar —— 仅精英怪和Boss显示，普通小怪不显示
+    if (e.isElite || e.type === 'boss') {
+      const hpRatio = e.hp / e.maxHp;
+      const barW = e.radius * 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      drawRoundedRect(ctx, -barW / 2, -e.radius - 12, barW, 4, 2);
+      ctx.fill();
+      ctx.fillStyle = hpRatio > 0.5 ? '#4ade80' : hpRatio > 0.25 ? '#facc15' : '#ef4444';
+      drawRoundedRect(ctx, -barW / 2, -e.radius - 12, barW * hpRatio, 4, 2);
+      ctx.fill();
+    }
 
     // 状态效果图标
     let statusX = -e.radius;
@@ -1744,16 +1746,7 @@ function drawSummons(ctx: CanvasRenderingContext2D, state: GameState) {
       ctx.shadowBlur = 0;
       ctx.restore();
 
-      // HP bar
-      if (s.hp < s.maxHp) {
-        const barW = s.radius * 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        drawRoundedRect(ctx, -barW / 2, -s.radius - 10, barW, 3, 1);
-        ctx.fill();
-        ctx.fillStyle = '#4ade80';
-        drawRoundedRect(ctx, -barW / 2, -s.radius - 10, barW * (s.hp / s.maxHp), 3, 1);
-        ctx.fill();
-      }
+      // 召唤物不显示头顶血条
     } else if (s.type === 'shield_drone') {
       // 护盾浮游机：菱形能量发生器，核心发光，无炮管
       // 外框（菱形）
@@ -1943,16 +1936,7 @@ function drawSummons(ctx: CanvasRenderingContext2D, state: GameState) {
       }
       ctx.shadowBlur = 0;
 
-      // HP bar
-      if (s.hp < s.maxHp) {
-        const barW = s.radius * 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        drawRoundedRect(ctx, -barW / 2, -s.radius - 10, barW, 3, 1);
-        ctx.fill();
-        ctx.fillStyle = '#4ade80';
-        drawRoundedRect(ctx, -barW / 2, -s.radius - 10, barW * (s.hp / s.maxHp), 3, 1);
-        ctx.fill();
-      }
+      // 召唤物不显示头顶血条
     }
 
     ctx.restore();
@@ -2039,6 +2023,59 @@ function drawPickups(ctx: CanvasRenderingContext2D, state: GameState) {
     ctx.translate(pk.x, pk.y);
     const pulse = Math.sin(Date.now() / 200) * 0.2 + 0.8;
     const spin = Date.now() / 500;
+
+    // 特殊掉落物品阶光环底（醒目化）
+    const isSpecial = pk.type !== 'exp' && pk.type !== 'health';
+    if (isSpecial) {
+      // 品阶颜色：bomb/vacuum=蓝，shield_pickup=蓝，screen_clear=金
+      let ringColor: string;
+      let ringGlow: string;
+      if (pk.type === 'screen_clear') {
+        ringColor = '#ffdd44';
+        ringGlow = '#ffaa00';
+      } else if (pk.type === 'bomb') {
+        ringColor = '#ff8833';
+        ringGlow = '#ff4400';
+      } else if (pk.type === 'vacuum') {
+        ringColor = '#44ddff';
+        ringGlow = '#2299cc';
+      } else {
+        ringColor = '#3b82f6';
+        ringGlow = '#2255aa';
+      }
+      const ringR = pk.radius * 1.8;
+      // 外层柔光晕
+      const haloGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, ringR * 1.5);
+      haloGrad.addColorStop(0, `${ringGlow}aa`);
+      haloGrad.addColorStop(0.5, `${ringGlow}44`);
+      haloGrad.addColorStop(1, `${ringGlow}00`);
+      ctx.fillStyle = haloGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringR * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      // 内层实色光环
+      ctx.shadowColor = ringGlow;
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = pulse;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+      // 旋转的品阶装饰小点
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = ringColor;
+      for (let i = 0; i < 4; i++) {
+        const a = spin * 0.7 + (i / 4) * Math.PI * 2;
+        const dx = Math.cos(a) * ringR;
+        const dy = Math.sin(a) * ringR;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
 
     if (pk.type === 'exp') {
       // 经验：正六边形晶体，大小/亮度随经验值变化，普通小兵的更小更暗

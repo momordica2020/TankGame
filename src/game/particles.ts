@@ -3,15 +3,21 @@ import { randRange, randPick } from './math';
 
 const MAX_PARTICLES = 2000;
 let pool: Particle[] = [];
+let particleSpawnRate = 1.0; // 粒子生成倍率（移动端降低）
 
 export function initParticles() {
   pool = [];
+  particleSpawnRate = 1.0;
   for (let i = 0; i < MAX_PARTICLES; i++) {
     pool.push({
       x: 0, y: 0, vx: 0, vy: 0,
       life: 0, maxLife: 1, size: 1, color: '#fff', active: false,
     });
   }
+}
+
+export function setParticleSpawnRate(rate: number) {
+  particleSpawnRate = Math.max(0.05, Math.min(1.0, rate));
 }
 
 function spawn(): Particle | null {
@@ -33,7 +39,8 @@ export function spawnParticles(
   lifeMin: number,
   lifeMax: number
 ) {
-  for (let i = 0; i < count; i++) {
+  const actualCount = Math.max(0, Math.floor(count * particleSpawnRate));
+  for (let i = 0; i < actualCount; i++) {
     const p = spawn();
     if (!p) break;
     const angle = randRange(0, Math.PI * 2);
@@ -51,7 +58,8 @@ export function spawnParticles(
 }
 
 export function spawnMuzzleFlash(x: number, y: number, angle: number, color: string) {
-  for (let i = 0; i < 10; i++) {
+  const count = Math.max(1, Math.floor(10 * particleSpawnRate));
+  for (let i = 0; i < count; i++) {
     const p = spawn();
     if (!p) break;
     const spread = randRange(-0.4, 0.4);

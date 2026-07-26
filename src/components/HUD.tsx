@@ -99,17 +99,6 @@ export default function HUD({ state }: HUDProps) {
         </div>
       </div>
 
-      {/* Bottom left - Weapons */}
-      <div className="absolute bottom-4 left-4 flex flex-col gap-1">
-        {p.weapons.map((w) => (
-          <div key={w.config.id} className="flex items-center gap-2 bg-black/50 px-3 py-1 border border-white/10">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: w.config.color }} />
-            <span className="text-xs text-white font-bold">{w.config.name}</span>
-            <span className="text-xs text-gray-400">Lv.{w.level}</span>
-          </div>
-        ))}
-      </div>
-
       {/* Bottom center - kills */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/50 px-4 py-1 border border-white/10">
         <Skull className="w-4 h-4 text-gray-400" />

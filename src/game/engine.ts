@@ -6,7 +6,7 @@ import type {
 import { WEAPON_CONFIGS, createProjectile, createEnemyProjectile, fireWeapon, findNearestEnemyId, selectTarget, getWeaponMuzzleWorld, getWeaponMountWorld, getSlotMount } from './weapons';
 import { dist, angleTo, normalize, clamp, randRange, randInt, randPick, circlePolygonCollision, pointInPolygon } from './math';
 import {
-  initParticles, updateParticles,
+  initParticles, updateParticles, setParticleSpawnRate,
   spawnExplosion, spawnBigExplosion, spawnBlood, spawnExpOrbSparkle,
   spawnHitSpark, spawnMuzzleFlash, spawnLightning, spawnIceShatter,
   spawnMagicBurst, spawnScreenFlash, spawnParticles,
@@ -131,6 +131,7 @@ export function createGameState(startWeapon: string): GameState {
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     || ('ontouchstart' in window && (typeof window !== 'undefined' && window.innerWidth < 900))
   );
+  if (isMobile) setParticleSpawnRate(0.25); // 移动端粒子数降至 25%
   const mobileZoom = 1;
 
   const terrains: Terrain[] = generateTerrains(mapWidth, mapHeight);
@@ -350,8 +351,9 @@ export function updateGame(state: GameState, dt: number, canvasW: number, canvas
     }
     // 过滤掉生命周期结束的碎片（弹壳等临时物）
     state.deathDebris = state.deathDebris.filter((d) => d.life === undefined || d.life > 0);
-    // 持续冒火花
-    if (Math.random() < 0.5) {
+    // 持续冒火花（移动端减少）
+    const deathSparkRate = state.isMobile ? 0.15 : 0.5;
+    if (Math.random() < deathSparkRate) {
       const p = state.player;
       spawnParticles(p.x + randRange(-15, 15), p.y + randRange(-15, 15), 2,
         ['#ffaa00', '#ff6600', '#ff3333', '#ffdd44'], 30, 120, 1, 4, 0.2, 0.5);
@@ -1513,8 +1515,9 @@ function updateEnemies(state: GameState, dt: number) {
     if (e.burnTimer > 0) {
       e.burnTimer -= dt;
       e.hp -= e.burnDamage * dt;
-      // 燃烧粒子
-      if (Math.random() < 0.3) {
+      // 燃烧粒子（移动端大幅减少）
+      const burnRate = state.isMobile ? 0.05 : 0.3;
+      if (Math.random() < burnRate) {
         spawnParticles(e.x + randRange(-e.radius, e.radius), e.y + randRange(-e.radius, e.radius), 1, ['#ff6600', '#ffaa00', '#ff3300'], 20, 80, 1, 3, 0.2, 0.4);
       }
       if (e.hp <= 0) {
@@ -1888,7 +1891,10 @@ function updatePickups(state: GameState, dt: number) {
       const baseSpeed = 80 + distFactor * distFactor * 400;
       // 等级加成（加速度随等级提升）
       const levelBonus = 1 + (p.level - 1) * 0.06;
-      const pullSpeed = baseSpeed * levelBonus;
+      let pullSpeed = baseSpeed * levelBonus;
+      // 特殊掉落物（非经验/非血包）吸引速率减半，更难捡到
+      const isSpecial = pk.type !== 'exp' && pk.type !== 'health';
+      if (isSpecial) pullSpeed *= 0.5;
       const dir = normalize(p.x - pk.x, p.y - pk.y);
       // 螺旋分量：垂直于指向玩家的方向
       const perpX = -dir.y;
@@ -2023,7 +2029,8 @@ function updateMagicEffects(state: GameState, dt: number) {
     fw.life -= dt;
     if (fw.life <= 0) fw.active = false;
     // 环境火焰粒子（沿长轴随机分布）
-    if (Math.random() < 0.7) {
+    const envRate = state.isMobile ? 0.1 : 0.7;
+    if (Math.random() < envRate) {
       const cW = Math.cos(fw.angle), sW = Math.sin(fw.angle);
       const t = (Math.random() - 0.5) * fw.height;
       const px = fw.x - sW * t;
@@ -2039,7 +2046,8 @@ function updateMagicEffects(state: GameState, dt: number) {
     iw.life -= dt;
     if (iw.life <= 0) iw.active = false;
     // 环境寒霜粒子
-    if (Math.random() < 0.5) {
+    const envIceRate = state.isMobile ? 0.08 : 0.5;
+    if (Math.random() < envIceRate) {
       const cW = Math.cos(iw.angle), sW = Math.sin(iw.angle);
       const t = (Math.random() - 0.5) * iw.height;
       const px = iw.x - sW * t;
