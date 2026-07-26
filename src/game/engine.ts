@@ -20,6 +20,13 @@ const input = {
   up: false, down: false, left: false, right: false,
   mouseX: 0, mouseY: 0, mouseWorldX: 0, mouseWorldY: 0,
   skill1: false, skill2: false, skill3: false, skill4: false,
+  touchActive: false,
+  touchStartX: 0,
+  touchStartY: 0,
+  touchX: 0,
+  touchY: 0,
+  touchJoyX: 0,
+  touchJoyY: 0,
 };
 
 // ---- 主动技能冷却（秒） ----
@@ -58,6 +65,59 @@ export function bindInput(canvas: HTMLCanvasElement) {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   canvas.addEventListener('mousemove', onMouseMove);
+
+  const onTouchStart = (e: TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length > 0) {
+      const t = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const x = t.clientX - rect.left;
+      const y = t.clientY - rect.top;
+      input.touchActive = true;
+      input.touchStartX = x;
+      input.touchStartY = y;
+      input.touchX = x;
+      input.touchY = y;
+      input.touchJoyX = 0;
+      input.touchJoyY = 0;
+      input.mouseX = x;
+      input.mouseY = y;
+    }
+  };
+  const onTouchMove = (e: TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length > 0 && input.touchActive) {
+      const t = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const x = t.clientX - rect.left;
+      const y = t.clientY - rect.top;
+      input.touchX = x;
+      input.touchY = y;
+      input.mouseX = x;
+      input.mouseY = y;
+      const dx = x - input.touchStartX;
+      const dy = y - input.touchStartY;
+      const maxDist = 50;
+      const dist = Math.hypot(dx, dy);
+      if (dist > maxDist) {
+        input.touchJoyX = (dx / dist) * maxDist;
+        input.touchJoyY = (dy / dist) * maxDist;
+      } else {
+        input.touchJoyX = dx;
+        input.touchJoyY = dy;
+      }
+    }
+  };
+  const onTouchEnd = (e: TouchEvent) => {
+    e.preventDefault();
+    input.touchActive = false;
+    input.touchJoyX = 0;
+    input.touchJoyY = 0;
+  };
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
 }
 
 export function createGameState(startWeapon: string): GameState {
@@ -66,6 +126,12 @@ export function createGameState(startWeapon: string): GameState {
 
   const mapWidth = 2400;
   const mapHeight = 2400;
+
+  const isMobile = typeof window !== 'undefined' && (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    || ('ontouchstart' in window && (typeof window !== 'undefined' && window.innerWidth < 900))
+  );
+  const mobileZoom = 1;
 
   const terrains: Terrain[] = generateTerrains(mapWidth, mapHeight);
 
@@ -115,6 +181,9 @@ export function createGameState(startWeapon: string): GameState {
     isPaused: false,
     isGameOver: false,
     showUpgrade: false,
+    isMobile,
+    mobileZoom,
+    touchInput: { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, joyX: 0, joyY: 0 },
     upgradeOptions: [],
     screenShake: 0,
     damageFlash: 0,
@@ -256,6 +325,14 @@ function generateTerrains(mapW: number, mapH: number): Terrain[] {
 
 // ============ 主循环 ============
 export function updateGame(state: GameState, dt: number, canvasW: number, canvasH: number) {
+  // 同步触摸输入到 state（供渲染使用）
+  state.touchInput.active = input.touchActive;
+  state.touchInput.startX = input.touchStartX;
+  state.touchInput.startY = input.touchStartY;
+  state.touchInput.currentX = input.touchX;
+  state.touchInput.currentY = input.touchY;
+  state.touchInput.joyX = input.touchJoyX;
+  state.touchInput.joyY = input.touchJoyY;
   if (state.isPaused || state.isGameOver || state.showUpgrade) return;
 
   // 死亡动画阶段：只更新碎片、粒子、相机，不更新游戏逻辑
@@ -355,6 +432,16 @@ function updatePlayer(state: GameState, dt: number) {
   if (input.down) my += 1;
   if (input.left) mx -= 1;
   if (input.right) mx += 1;
+  // 触摸控制
+  if (input.touchActive && state.isMobile) {
+    const joyDeadzone = 8;
+    const joyMag = Math.hypot(input.touchJoyX, input.touchJoyY);
+    if (joyMag > joyDeadzone) {
+      const factor = (joyMag - joyDeadzone) / (50 - joyDeadzone);
+      mx += (input.touchJoyX / joyMag) * factor;
+      my += (input.touchJoyY / joyMag) * factor;
+    }
+  }
   const n = normalize(mx, my);
   let speed = p.speed;
   // 地形影响

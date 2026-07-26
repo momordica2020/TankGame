@@ -301,6 +301,17 @@ export interface GameState {
   isPaused: boolean;
   isGameOver: boolean;
   showUpgrade: boolean;
+  isMobile: boolean;
+  mobileZoom: number;
+  touchInput: {
+    active: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    joyX: number;
+    joyY: number;
+  };
   upgradeOptions: UpgradeOption[];
   screenShake: number;
   damageFlash: number;

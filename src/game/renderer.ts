@@ -25,6 +25,10 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameState, canv
   // 死亡动画：画面逐渐缩进到玩家位置
   const dying = state.deathAnim > 0;
   let zoom = 1;
+  // 移动端缩放：竖屏适配，拉远视野
+  if (state.isMobile) {
+    zoom = Math.min(1, (canvasW * 0.78) / 480);
+  }
   if (dying) {
     // 从 1.0 缩放到 2.5
     const t = 1 - state.deathAnim / 1.6;
@@ -73,8 +77,9 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameState, canv
     ctx.fillRect(0, 0, canvasW, canvasH);
   }
 
-  if (!dying) drawMinimap(ctx, state, canvasW, canvasH);
+  if (!dying && !state.isMobile) drawMinimap(ctx, state, canvasW, canvasH);
   if (!dying) drawOffscreenIndicators(ctx, state, canvasW, canvasH);
+  if (!dying && state.isMobile) drawTouchJoystick(ctx, state, canvasW, canvasH);
 }
 
 function drawDeathDebris(ctx: CanvasRenderingContext2D, state: GameState) {
@@ -2602,4 +2607,48 @@ function drawOffscreenIndicators(ctx: CanvasRenderingContext2D, state: GameState
 
     ctx.restore();
   }
+}
+function drawTouchJoystick(ctx: CanvasRenderingContext2D, state: GameState, canvasW: number, canvasH: number) {
+  const ti = state.touchInput;
+  if (!ti.active) return;
+
+  const baseX = ti.startX;
+  const baseY = ti.startY;
+  const stickX = baseX + ti.joyX;
+  const stickY = baseY + ti.joyY;
+
+  ctx.save();
+  // 基座
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#4a7c59';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(baseX, baseY, 50, 0, Math.PI * 2);
+  ctx.fill();
+  // 基座内环
+  ctx.globalAlpha = 0.25;
+  ctx.strokeStyle = '#4a7c59';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(baseX, baseY, 35, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // 摇杆头
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = '#4a7c59';
+  ctx.shadowColor = '#4a7c59';
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  ctx.arc(stickX, stickY, 22, 0, Math.PI * 2);
+  ctx.fill();
+  // 摇杆内圈
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = '#6ba97f';
+  ctx.beginPath();
+  ctx.arc(stickX, stickY, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
 }
