@@ -903,7 +903,7 @@ function drawEnemies(ctx: CanvasRenderingContext2D, state: GameState) {
 
     // Boss蓄力冲锋路径高亮警示（使用相对坐标，因 ctx 已平移到 Boss 位置）
     if (e.type === 'boss' && e.bossChargeState === 'charging' && e.bossChargeDir) {
-      const chargeLen = 360; // 与实际冲锋距离一致：dashSpeed(600) * dashTime(0.6)
+      const chargeLen = 720; // 与实际冲锋距离一致：dashSpeed(600) * dashTime(1.2)
       const dirX = e.bossChargeDir.x;
       const dirY = e.bossChargeDir.y;
       const pulse = Math.sin(Date.now() / 80) * 0.3 + 0.7;
@@ -934,10 +934,6 @@ function drawEnemies(ctx: CanvasRenderingContext2D, state: GameState) {
       ctx.lineTo(endLX, endLY);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = `rgba(255, 0, 0, ${pulse * 0.6})`;
-      ctx.beginPath();
-      ctx.arc(endLX, endLY, halfW * 0.6, 0, Math.PI * 2);
-      ctx.fill();
       ctx.shadowBlur = 0;
       ctx.restore();
     }
@@ -2246,61 +2242,217 @@ function drawLightning(ctx: CanvasRenderingContext2D, state: GameState) {
 }
 
 function drawFireWalls(ctx: CanvasRenderingContext2D, state: GameState) {
+  const t = Date.now();
   for (const fw of state.fireWallEffects) {
     if (!fw.active) continue;
-    const alpha = Math.min(1, fw.life / fw.maxLife * 1.5);
+    const lifeRatio = fw.life / fw.maxLife;
+    const alpha = Math.min(1, lifeRatio * 1.5);
+    const pulse = Math.sin(t / 100) * 0.15 + 0.85;
+
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(fw.x, fw.y);
-    ctx.shadowColor = '#ff4400';
+    ctx.rotate(fw.angle);
+
+    const hw = fw.width / 2;   // 厚度半长
+    const hh = fw.height / 2;  // 长度半长
+
+    // 1. 地面熔岩辉光（沿墙长轴的椭圆）
+    ctx.shadowColor = '#ff3300';
+    ctx.shadowBlur = 40;
+    const groundGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, fw.height * 0.6);
+    groundGrad.addColorStop(0, 'rgba(255, 80, 0, 0.6)');
+    groundGrad.addColorStop(0.5, 'rgba(200, 40, 0, 0.3)');
+    groundGrad.addColorStop(1, 'rgba(80, 10, 0, 0)');
+    ctx.fillStyle = groundGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, fw.width * 1.3, fw.height * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // 2. 熔岩地裂纹路（沿长轴方向，正弦扰动）
+    ctx.strokeStyle = `rgba(255, 120, 0, ${0.7 * pulse})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const y0 = -hh + (i + 0.5) * fw.height / 4;
+      ctx.beginPath();
+      ctx.moveTo(-hw * 1.4, y0);
+      for (let s = 1; s <= 6; s++) {
+        const fx = -hw * 1.4 + (s / 6) * hw * 2.8;
+        const fy = y0 + Math.sin(t / 150 + i * 1.7 + s) * 3;
+        ctx.lineTo(fx, fy);
+      }
+      ctx.stroke();
+    }
+
+    // 3. 主火焰墙体（厚度方向渐变，中心炽热）
+    ctx.shadowColor = '#ff5500';
     ctx.shadowBlur = 30;
-    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, fw.width);
-    grad.addColorStop(0, 'rgba(255, 240, 100, 0.85)');
-    grad.addColorStop(0.3, 'rgba(255, 120, 0, 0.75)');
-    grad.addColorStop(0.7, 'rgba(255, 40, 0, 0.5)');
-    grad.addColorStop(1, 'rgba(120, 0, 0, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(-fw.width / 2, -fw.height / 2, fw.width, fw.height);
-    // 火焰波动
-    const flickr = Math.sin(Date.now() / 80) * 4;
-    ctx.fillStyle = 'rgba(255, 220, 80, 0.6)';
-    ctx.fillRect(-fw.width / 2, -fw.height / 2 + flickr, fw.width, fw.height - flickr * 2);
+    const flameGrad = ctx.createLinearGradient(-hw, 0, hw, 0);
+    flameGrad.addColorStop(0, 'rgba(255, 60, 0, 0.1)');
+    flameGrad.addColorStop(0.2, 'rgba(255, 100, 0, 0.7)');
+    flameGrad.addColorStop(0.5, 'rgba(255, 230, 100, 0.95)');
+    flameGrad.addColorStop(0.8, 'rgba(255, 100, 0, 0.7)');
+    flameGrad.addColorStop(1, 'rgba(255, 60, 0, 0.1)');
+    ctx.fillStyle = flameGrad;
+    ctx.fillRect(-hw, -hh, fw.width, fw.height);
+
+    // 4. 跳动火柱（沿长轴多根椭圆火舌）
+    const colCount = 11;
+    for (let i = 0; i < colCount; i++) {
+      const y = -hh + (i + 0.5) * fw.height / colCount;
+      const ph = Math.sin(t / 80 + i * 1.3) * 0.4 + 0.6;
+      const w = fw.width * (0.7 + Math.sin(t / 100 + i) * 0.2);
+      ctx.fillStyle = `rgba(255, 240, 150, ${ph * 0.8})`;
+      ctx.beginPath();
+      ctx.ellipse(0, y, w / 2, fw.height / colCount * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 5. 两侧外溢火舌（厚度方向±边缘跳动）
+    ctx.fillStyle = `rgba(255, 180, 60, ${0.6 * pulse})`;
+    const tongueCount = 13;
+    for (let i = 0; i < tongueCount; i++) {
+      const y = -hh + (i + 0.5) * fw.height / tongueCount;
+      const flickR = Math.abs(Math.sin(t / 60 + i * 1.7)) * 5 + 5;
+      const flickL = Math.abs(Math.sin(t / 65 + i * 1.9 + 1)) * 5 + 5;
+      ctx.beginPath();
+      ctx.arc(hw, y, flickR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(-hw, y, flickL, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 6. 中央高亮炽热核
+    ctx.fillStyle = `rgba(255, 255, 220, ${0.5 * pulse})`;
+    ctx.fillRect(-hw * 0.25, -hh, fw.width * 0.5, fw.height);
+
     ctx.shadowBlur = 0;
     ctx.restore();
   }
 }
 
 function drawIceWalls(ctx: CanvasRenderingContext2D, state: GameState) {
+  const t = Date.now();
   for (const iw of state.iceWallEffects) {
     if (!iw.active) continue;
-    const alpha = Math.min(1, iw.life / iw.maxLife * 1.5);
+    const lifeRatio = iw.life / iw.maxLife;
+    const alpha = Math.min(1, lifeRatio * 1.5);
+    const shimmer = Math.sin(t / 150) * 0.15 + 0.85;
+
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(iw.x, iw.y);
+    ctx.rotate(iw.angle);
+
+    const hw = iw.width / 2;
+    const hh = iw.height / 2;
+
+    // 1. 寒霜地面雾气（椭圆辉光）
     ctx.shadowColor = '#66ccff';
+    ctx.shadowBlur = 30;
+    const mistGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, iw.height * 0.6);
+    mistGrad.addColorStop(0, 'rgba(150, 220, 255, 0.45)');
+    mistGrad.addColorStop(0.5, 'rgba(80, 160, 220, 0.22)');
+    mistGrad.addColorStop(1, 'rgba(30, 80, 140, 0)');
+    ctx.fillStyle = mistGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, iw.width * 1.6, iw.height * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // 2. 冰墙底座深色阴影
+    ctx.fillStyle = 'rgba(40, 80, 120, 0.5)';
+    ctx.fillRect(-hw - 2, -hh, iw.width + 4, iw.height);
+
+    // 3. 冰墙主体（晶体感横向渐变，中心透亮）
+    ctx.shadowColor = '#88ddff';
     ctx.shadowBlur = 20;
-    // 冰墙主体
-    const grad = ctx.createLinearGradient(0, -iw.height / 2, 0, iw.height / 2);
-    grad.addColorStop(0, 'rgba(170, 230, 255, 0.85)');
-    grad.addColorStop(0.5, 'rgba(100, 180, 230, 0.7)');
-    grad.addColorStop(1, 'rgba(60, 130, 200, 0.85)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(-iw.width / 2, -iw.height / 2, iw.width, iw.height);
-    // 冰晶边缘
-    ctx.strokeStyle = '#aaeeff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(-iw.width / 2, -iw.height / 2, iw.width, iw.height);
-    // 冰晶高光
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    const bodyGrad = ctx.createLinearGradient(-hw, 0, hw, 0);
+    bodyGrad.addColorStop(0, 'rgba(120, 200, 240, 0.6)');
+    bodyGrad.addColorStop(0.3, 'rgba(180, 230, 255, 0.85)');
+    bodyGrad.addColorStop(0.5, 'rgba(230, 250, 255, 0.95)');
+    bodyGrad.addColorStop(0.7, 'rgba(180, 230, 255, 0.85)');
+    bodyGrad.addColorStop(1, 'rgba(120, 200, 240, 0.6)');
+    ctx.fillStyle = bodyGrad;
+    ctx.fillRect(-hw, -hh, iw.width, iw.height);
+
+    // 4. 冰晶切面棱线（菱形分块）
+    ctx.strokeStyle = `rgba(180, 230, 255, ${0.6 * shimmer})`;
     ctx.lineWidth = 1;
-    for (let i = 0; i < 4; i++) {
-      const y = -iw.height / 2 + (i + 1) * iw.height / 5;
+    const facetCount = 6;
+    for (let i = 0; i < facetCount; i++) {
+      const y0 = -hh + (i / facetCount) * iw.height;
+      const y1 = -hh + ((i + 1) / facetCount) * iw.height;
+      const ym = (y0 + y1) / 2;
       ctx.beginPath();
-      ctx.moveTo(-iw.width / 2, y);
-      ctx.lineTo(-iw.width / 2 + 4, y - 3);
-      ctx.lineTo(iw.width / 2, y - 3);
+      ctx.moveTo(-hw, y0);
+      ctx.lineTo(hw * 0.3, ym);
+      ctx.lineTo(-hw, y1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(hw, y0);
+      ctx.lineTo(-hw * 0.3, ym);
+      ctx.lineTo(hw, y1);
       ctx.stroke();
     }
+
+    // 5. 两侧锯齿冰刺（沿长边外凸）
+    ctx.fillStyle = `rgba(220, 245, 255, ${0.9 * shimmer})`;
+    const shardCount = 11;
+    ctx.beginPath();
+    ctx.moveTo(hw, -hh);
+    for (let i = 0; i <= shardCount; i++) {
+      const y = -hh + (i / shardCount) * iw.height;
+      const tip = hw + 6 + Math.sin(t / 200 + i * 1.3) * 3 + (i % 2) * 4;
+      ctx.lineTo(tip, y);
+    }
+    ctx.lineTo(hw, hh);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-hw, -hh);
+    for (let i = 0; i <= shardCount; i++) {
+      const y = -hh + (i / shardCount) * iw.height;
+      const tip = -hw - 6 - Math.sin(t / 210 + i * 1.5 + 1) * 3 - (i % 2) * 4;
+      ctx.lineTo(tip, y);
+    }
+    ctx.lineTo(-hw, hh);
+    ctx.closePath();
+    ctx.fill();
+
+    // 6. 高光闪烁线（偶现）
+    ctx.strokeStyle = `rgba(255, 255, 255, ${shimmer})`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 3; i++) {
+      const y = -hh + (i + 1) * iw.height / 4;
+      const flick = Math.sin(t / 120 + i * 2) * 0.5 + 0.5;
+      if (flick > 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(-hw * 0.6, y);
+        ctx.lineTo(hw * 0.6, y);
+        ctx.stroke();
+      }
+    }
+
+    // 7. 两端封顶（更亮的冰帽）
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.7 * shimmer})`;
+    ctx.beginPath();
+    ctx.moveTo(-hw, -hh);
+    ctx.lineTo(hw, -hh);
+    ctx.lineTo(hw * 0.5, -hh - 6);
+    ctx.lineTo(-hw * 0.5, -hh - 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-hw, hh);
+    ctx.lineTo(hw, hh);
+    ctx.lineTo(hw * 0.5, hh + 6);
+    ctx.lineTo(-hw * 0.5, hh + 6);
+    ctx.closePath();
+    ctx.fill();
+
     ctx.shadowBlur = 0;
     ctx.restore();
   }
@@ -2335,32 +2487,48 @@ function drawBeamLasers(ctx: CanvasRenderingContext2D, state: GameState) {
 }
 
 function drawBossBombs(ctx: CanvasRenderingContext2D, state: GameState) {
+  const t = Date.now();
   for (const b of state.bossBombs) {
     if (!b.active) continue;
-    const progress = 1 - b.timer / b.maxTimer; // 0→1
-    const pulse = Math.sin(Date.now() / 100) * 0.2 + 0.8;
-    // 红色警示圈
-    ctx.strokeStyle = `rgba(255, 30, 30, ${pulse * (0.4 + progress * 0.6)})`;
+    const progress = 1 - b.timer / b.maxTimer; // 0→1 从空到满
+    const pulse = Math.sin(t / 100) * 0.2 + 0.8;
+    const fillR = b.radius * progress; // 填充半径随时间扩张
+
+    // 外层半透明警示底圈
+    ctx.strokeStyle = `rgba(255, 30, 30, ${pulse * (0.35 + progress * 0.4)})`;
     ctx.lineWidth = 3;
     ctx.shadowColor = '#ff0000';
-    ctx.shadowBlur = 15 * (0.5 + progress * 0.5);
+    ctx.shadowBlur = 12 * (0.5 + progress * 0.5);
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
     ctx.stroke();
-    // 内层填充
-    ctx.fillStyle = `rgba(255, 0, 0, ${progress * 0.2})`;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-    ctx.fill();
-    // 倒计时数字
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(b.timer.toFixed(1), b.x, b.y);
+
+    // 从中心扩张的实体红色填充圈
+    if (fillR > 0) {
+      const fillGrad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, fillR);
+      fillGrad.addColorStop(0, `rgba(255, 200, 80, ${0.95 * pulse})`);
+      fillGrad.addColorStop(0.4, `rgba(255, 80, 0, ${0.85 * pulse})`);
+      fillGrad.addColorStop(0.8, `rgba(255, 20, 0, ${0.7 * pulse})`);
+      fillGrad.addColorStop(1, `rgba(180, 0, 0, 0)`);
+      ctx.fillStyle = fillGrad;
+      ctx.shadowColor = '#ff4400';
+      ctx.shadowBlur = 20 * progress;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, fillR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // 填充圈的前缘亮边
+      ctx.strokeStyle = `rgba(255, 230, 120, ${pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, fillR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     // 中心十字准星
-    ctx.strokeStyle = `rgba(255, 100, 100, ${pulse})`;
+    ctx.strokeStyle = `rgba(255, 120, 120, ${pulse})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(b.x - 10, b.y);
@@ -2368,6 +2536,16 @@ function drawBossBombs(ctx: CanvasRenderingContext2D, state: GameState) {
     ctx.moveTo(b.x, b.y - 10);
     ctx.lineTo(b.x, b.y + 10);
     ctx.stroke();
+
+    // 内缩的虚线预警环（倒计时剩余比例）
+    const warnR = b.radius * (1 - progress * 0.5);
+    ctx.strokeStyle = `rgba(255, 180, 60, ${0.6 * pulse})`;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, warnR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 }
 

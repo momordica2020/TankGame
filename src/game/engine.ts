@@ -4,7 +4,7 @@ import type {
   MeleeEffect, FlameEffect, LightningEffect, FireWallEffect, IceWallEffect, BeamLaserEffect,
 } from './types';
 import { WEAPON_CONFIGS, createProjectile, createEnemyProjectile, fireWeapon, findNearestEnemyId, selectTarget, getWeaponMuzzleWorld, getWeaponMountWorld, getSlotMount } from './weapons';
-import { dist, angleTo, normalize, clamp, randRange, randInt, randPick, circleRectCollision, circlePolygonCollision, pointInPolygon } from './math';
+import { dist, angleTo, normalize, clamp, randRange, randInt, randPick, circlePolygonCollision, pointInPolygon } from './math';
 import {
   initParticles, updateParticles,
   spawnExplosion, spawnBigExplosion, spawnBlood, spawnExpOrbSparkle,
@@ -840,13 +840,16 @@ function castFireWall(state: GameState, cfg: WeaponConfig, lvl: number) {
     }
     if (cnt > bestCount) { bestCount = cnt; bestX = cx; bestY = cy; }
   }
+  // 墙体长边垂直于玩家到墙中心的连线
+  const fwAng = angleTo(p.x, p.y, bestX, bestY);
   state.fireWallEffects.push({
-    x: bestX, y: bestY, width: 180, height: 60,
+    x: bestX, y: bestY, width: 55, height: 210, angle: fwAng,
     life: 3 + lvl * 0.3, maxLife: 3 + lvl * 0.3,
     damage: cfg.damage * (1 + (lvl - 1) * 0.3),
     lastTickTime: 0, active: true,
   });
   spawnMagicBurst(bestX, bestY, cfg.color);
+  spawnBigExplosion(bestX, bestY);
 }
 
 // ---- 冰墙术 ----
@@ -858,11 +861,9 @@ function castIceWall(state: GameState, cfg: WeaponConfig, lvl: number) {
   const wx = p.x + Math.cos(ang) * 120;
   const wy = p.y + Math.sin(ang) * 120;
   state.iceWallEffects.push({
-    x: wx, y: wy, width: 30, height: 160,
+    x: wx, y: wy, width: 34, height: 180, angle: ang,
     life: 5 + lvl * 0.4, maxLife: 5 + lvl * 0.4, active: true,
   });
-  // 旋转方向使长边垂直于玩家朝向
-  // 这里简化：长方形 width=30 height=160，玩家方向沿 x 轴时合适；其它方向用旋转概念由渲染时处理
   // 给附近敌人造成冰冻伤害和减速
   for (const e of state.enemies) {
     if (!e.active) continue;
@@ -1348,26 +1349,100 @@ function updateEnemies(state: GameState, dt: number) {
       if (e.bossBombTimer === undefined) e.bossBombTimer = 6;
       if (e.bossChargeState === undefined) e.bossChargeState = 'idle';
 
-      // 技能1：圆周散弹 + 瞄准弹交替
+      // 技能1：东方Project风格弹幕（多种模式轮替，数量多、速度慢）
       e.bossSkillTimer -= dt;
       if (e.bossSkillTimer <= 0) {
-        e.bossSkillTimer = 3 + Math.random() * 2;
-        // 交替使用两种子弹模式
-        const useRing = Math.random() < 0.5;
-        if (useRing) {
-          // 圆周散开：24发环形弹幕
-          const count = 24;
+        e.bossSkillTimer = 1.8 + Math.random() * 1.0;
+        // 弹幕模式池
+        const pattern = Math.floor(Math.random() * 7);
+        const baseSpeed = 110; // 弹幕整体偏慢，靠密度压制
+
+        if (pattern === 0) {
+          // 模式1：双层环形弹幕（48+36发）
+          const count1 = 48;
+          const count2 = 36;
           const startAng = Math.random() * Math.PI * 2;
-          for (let i = 0; i < count; i++) {
-            const a = startAng + (i / count) * Math.PI * 2;
-            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, 180, 12, '#ff0033'));
+          for (let i = 0; i < count1; i++) {
+            const a = startAng + (i / count1) * Math.PI * 2;
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, baseSpeed, 10, '#ff3366'));
+          }
+          for (let i = 0; i < count2; i++) {
+            const a = startAng + Math.PI / count2 + (i / count2) * Math.PI * 2;
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, baseSpeed * 0.7, 8, '#ffaa22'));
+          }
+        } else if (pattern === 1) {
+          // 模式2：扇形弹幕+追踪（大扇形21发+中央瞄准弹）
+          const ang = angleTo(e.x, e.y, p.x, p.y);
+          const fanCount = 21;
+          const fanSpread = Math.PI * 0.8;
+          for (let i = 0; i < fanCount; i++) {
+            const a = ang - fanSpread / 2 + (i / (fanCount - 1)) * fanSpread;
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, baseSpeed * 0.95, 10, '#cc33ff'));
+          }
+          // 中央3发快速瞄准弹
+          for (let i = -1; i <= 1; i++) {
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, ang + i * 0.08, baseSpeed * 1.4, 12, '#ff0088'));
+          }
+        } else if (pattern === 2) {
+          // 模式3：螺旋弹幕（双螺旋各18发，旋转扩散）
+          const spiralCount = 18;
+          const spiralAng = Math.random() * Math.PI * 2;
+          for (let i = 0; i < spiralCount; i++) {
+            const t = i / spiralCount;
+            const a1 = spiralAng + t * Math.PI * 2.5;
+            const a2 = spiralAng + Math.PI + t * Math.PI * 2.5;
+            const spd = baseSpeed * (0.7 + t * 0.6);
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a1, spd, 8, '#6644ff'));
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a2, spd, 8, '#ff44aa'));
+          }
+        } else if (pattern === 3) {
+          // 模式4：圆形散射+随机偏移（模拟乱弹）
+          const total = 60;
+          for (let i = 0; i < total; i++) {
+            const a = (i / total) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+            const spd = baseSpeed * (0.75 + Math.random() * 0.5);
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, spd, 7, '#ff8800'));
+          }
+        } else if (pattern === 4) {
+          // 模式5：三方向波浪弹（左右中三路，每路扇形，密度高）
+          const ang = angleTo(e.x, e.y, p.x, p.y);
+          const waveCount = 9;
+          for (let w = -1; w <= 1; w++) {
+            const baseA = ang + w * 0.55;
+            for (let i = 0; i < waveCount; i++) {
+              const a = baseA - 0.3 + (i / (waveCount - 1)) * 0.6;
+              const spd = baseSpeed * (0.85 + Math.abs(i - (waveCount - 1) / 2) * 0.05);
+              state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, spd, 9, '#ffdd33'));
+            }
+          }
+        } else if (pattern === 5) {
+          // 模式6：十字+X字弹幕组合（密集激光线）
+          const lineCount = 16;
+          for (let i = 0; i < lineCount; i++) {
+            const t = i / lineCount;
+            for (let d = 0; d < 8; d++) {
+              const a = (d / 8) * Math.PI * 2 + t * 0.15;
+              const spd = baseSpeed * (0.6 + t * 0.5);
+              state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, spd, 7, '#33ccff'));
+            }
           }
         } else {
-          // 瞄准玩家：5发追踪弹
-          const ang = angleTo(e.x, e.y, p.x, p.y);
-          for (let i = -2; i <= 2; i++) {
-            const a = ang + i * 0.15;
-            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, 280, 15, '#7c3aed'));
+          // 模式7：花瓣环形弹幕（6瓣各9发，图案优美）
+          const petalCount = 6;
+          const perPetal = 9;
+          const startAng = Math.random() * Math.PI * 2;
+          for (let pt = 0; pt < petalCount; pt++) {
+            const centerA = startAng + (pt / petalCount) * Math.PI * 2;
+            for (let i = 0; i < perPetal; i++) {
+              const a = centerA - 0.25 + (i / (perPetal - 1)) * 0.5;
+              const spd = baseSpeed * (0.8 + Math.abs(i - (perPetal - 1) / 2) * 0.08);
+              state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, spd, 8, '#ff5599'));
+            }
+          }
+          // 中央6发快弹
+          for (let i = 0; i < 6; i++) {
+            const a = startAng + (i / 6) * Math.PI * 2;
+            state.enemyProjectiles.push(createEnemyProjectile(e.x, e.y, a, baseSpeed * 1.3, 10, '#ffffff'));
           }
         }
         spawnMuzzleFlash(e.x, e.y, 0, '#ff0033');
@@ -1406,7 +1481,7 @@ function updateEnemies(state: GameState, dt: number) {
         if (e.bossChargeTimer <= 0) {
           // 开始冲锋
           e.bossChargeState = 'dashing';
-          e.bossChargeTimer = 0.6; // 冲锋0.6秒
+          e.bossChargeTimer = 1.2; // 冲锋1.2秒（距离720）
         }
       } else if (e.bossChargeState === 'dashing') {
         e.bossChargeTimer -= dt;
@@ -1448,22 +1523,37 @@ function updateEnemies(state: GameState, dt: number) {
       }
     }
 
-    // 冰墙阻挡
+    // 冰墙阻挡（旋转矩形碰撞）—— Boss冲锋时无视冰墙
     let blockedByIce = false;
-    for (const iw of state.iceWallEffects) {
-      if (!iw.active) continue;
-      if (circleRectCollision(e.x, e.y, e.radius, iw.x - iw.width / 2, iw.y - iw.height / 2, iw.width, iw.height)) {
-        blockedByIce = true;
-        e.freezeTimer = Math.max(e.freezeTimer, 0.5);
-        e.speed = e.baseSpeed * 0.6;
-        // 沿法线推开
-        const cx = clamp(e.x, iw.x - iw.width / 2, iw.x + iw.width / 2);
-        const cy = clamp(e.y, iw.y - iw.height / 2, iw.y + iw.height / 2);
-        const dx = e.x - cx, dy = e.y - cy;
-        const d = Math.hypot(dx, dy) || 1;
-        e.x = cx + (dx / d) * (e.radius + 2);
-        e.y = cy + (dy / d) * (e.radius + 2);
-        break;
+    const bossDashing = e.type === 'boss' && e.bossChargeState === 'dashing';
+    if (!bossDashing) {
+      for (const iw of state.iceWallEffects) {
+        if (!iw.active) continue;
+        const dx = e.x - iw.x;
+        const dy = e.y - iw.y;
+        const ca = Math.cos(-iw.angle);
+        const sa = Math.sin(-iw.angle);
+        const lx = dx * ca - dy * sa;
+        const ly = dx * sa + dy * ca;
+        if (Math.abs(lx) <= iw.width / 2 + e.radius && Math.abs(ly) <= iw.height / 2 + e.radius) {
+          blockedByIce = true;
+          e.freezeTimer = Math.max(e.freezeTimer, 0.5);
+          e.speed = e.baseSpeed * 0.6;
+          // 沿法线推开：本地坐标系中最近点
+          const cxL = clamp(lx, -iw.width / 2, iw.width / 2);
+          const cyL = clamp(ly, -iw.height / 2, iw.height / 2);
+          // 转回世界坐标
+          const cW = Math.cos(iw.angle);
+          const sW = Math.sin(iw.angle);
+          const closestX = iw.x + cxL * cW - cyL * sW;
+          const closestY = iw.y + cxL * sW + cyL * cW;
+          const pdx = e.x - closestX;
+          const pdy = e.y - closestY;
+          const pd = Math.hypot(pdx, pdy) || 1;
+          e.x = closestX + (pdx / pd) * (e.radius + 2);
+          e.y = closestY + (pdy / pd) * (e.radius + 2);
+          break;
+        }
       }
     }
 
@@ -1551,10 +1641,16 @@ function updateEnemies(state: GameState, dt: number) {
     e.x = clamp(e.x, e.radius, state.mapWidth - e.radius);
     e.y = clamp(e.y, e.radius, state.mapHeight - e.radius);
 
-    // 火墙持续伤害
+    // 火墙持续伤害（旋转矩形碰撞）
     for (const fw of state.fireWallEffects) {
       if (!fw.active) continue;
-      if (circleRectCollision(e.x, e.y, e.radius, fw.x - fw.width / 2, fw.y - fw.height / 2, fw.width, fw.height)) {
+      const dx = e.x - fw.x;
+      const dy = e.y - fw.y;
+      const ca = Math.cos(-fw.angle);
+      const sa = Math.sin(-fw.angle);
+      const lx = dx * ca - dy * sa;
+      const ly = dx * sa + dy * ca;
+      if (Math.abs(lx) <= fw.width / 2 + e.radius && Math.abs(ly) <= fw.height / 2 + e.radius) {
         damageEnemy(state, e, fw.damage * dt * 2, '#ff4400');
       }
     }
@@ -1926,6 +2022,14 @@ function updateMagicEffects(state: GameState, dt: number) {
     if (!fw.active) continue;
     fw.life -= dt;
     if (fw.life <= 0) fw.active = false;
+    // 环境火焰粒子（沿长轴随机分布）
+    if (Math.random() < 0.7) {
+      const cW = Math.cos(fw.angle), sW = Math.sin(fw.angle);
+      const t = (Math.random() - 0.5) * fw.height;
+      const px = fw.x - sW * t;
+      const py = fw.y + cW * t;
+      spawnParticles(px, py, 1, ['#ffaa00', '#ff6600', '#ff3300', '#ffdd66'], 20, 90, 1, 3, 0.3, 0.7);
+    }
   }
   state.fireWallEffects = state.fireWallEffects.filter((f) => f.active);
 
@@ -1934,6 +2038,14 @@ function updateMagicEffects(state: GameState, dt: number) {
     if (!iw.active) continue;
     iw.life -= dt;
     if (iw.life <= 0) iw.active = false;
+    // 环境寒霜粒子
+    if (Math.random() < 0.5) {
+      const cW = Math.cos(iw.angle), sW = Math.sin(iw.angle);
+      const t = (Math.random() - 0.5) * iw.height;
+      const px = iw.x - sW * t;
+      const py = iw.y + cW * t;
+      spawnParticles(px, py, 1, ['#aaeeff', '#66ccff', '#ffffff', '#bbddff'], 10, 45, 1, 2, 0.4, 0.9);
+    }
   }
   state.iceWallEffects = state.iceWallEffects.filter((i) => i.active);
 
@@ -2003,10 +2115,10 @@ function updateSpawning(state: GameState, dt: number) {
     state.killsRecent = 0;
   }
 
-  // 2) 动态上限：基于玩家成长度，但严格控制避免卡顿
-  //    基础 70，每级成长 +6，最高 130（性能安全区间）
+  // 2) 动态上限：基于玩家成长度，严格控制（小怪数量翻倍）
+  //    基础 140，每级成长 +12，最高 260
   const growth = calcPlayerPower(p);
-  state.enemyCap = Math.min(130, 70 + Math.floor(growth * 6));
+  state.enemyCap = Math.min(260, 140 + Math.floor(growth * 12));
 
   // 3) 动态经验系数：场上怪物多/清怪快时降低单个经验，避免频繁升级暂停
   //    目标：让玩家大约每 12-18 秒升一级
@@ -2022,11 +2134,11 @@ function updateSpawning(state: GameState, dt: number) {
   // 平滑过渡
   state.dynamicExpMult += (targetExp - state.dynamicExpMult) * Math.min(1, dt * 0.5);
 
-  // 4) 持续刷新：少量基础敌人持续涌入（填补清怪空白，保持节奏感）
+  // 4) 持续刷新：少量基础敌人持续涌入（填补清怪空白，保持节奏感）— 小怪数量翻倍
   state.continuousSpawnTimer -= dt;
   if (state.continuousSpawnTimer <= 0) {
-    // 间隔：场上越满越慢
-    const interval = clamp(1.6 - growth * 0.08, 0.5, 1.6) * (0.5 + densityRatio * 0.8);
+    // 间隔：场上越满越慢；整体频率提高
+    const interval = clamp(1.0 - growth * 0.05, 0.3, 1.0) * (0.4 + densityRatio * 0.8);
     state.continuousSpawnTimer = interval;
     if (liveEnemies < state.enemyCap) {
       const pool: EnemyType[] = ['basic'];
@@ -2034,27 +2146,27 @@ function updateSpawning(state: GameState, dt: number) {
       if (wave >= 4) pool.push('basic', 'fast', 'splitter');
       if (wave >= 6) pool.push('tank');
       if (wave >= 9) pool.push('bruiser');
-      const count = 1 + (Math.random() < 0.3 ? 1 : 0);
+      const count = 2 + (Math.random() < 0.4 ? 2 : 0);
       for (let i = 0; i < count && liveEnemies + i < state.enemyCap; i++) {
         spawnEnemy(state, randPick(pool));
       }
     }
   }
 
-  // 5) 群组波次刷新：每 5-9 秒生成 3-5 只成群敌人（从同一方向涌入）
+  // 5) 群组波次刷新：每 3-6 秒生成 6-10 只成群敌人（从同一方向涌入）— 小怪数量翻倍
   state.groupSpawnTimer -= dt;
   if (state.groupSpawnTimer <= 0) {
-    state.groupSpawnTimer = randRange(5, 9);
-    if (liveEnemies < state.enemyCap - 6) {
+    state.groupSpawnTimer = randRange(3, 6);
+    if (liveEnemies < state.enemyCap - 12) {
       const pool: EnemyType[] = ['basic', 'fast'];
       if (wave >= 3) pool.push('shooter');
       if (wave >= 5) pool.push('tank', 'shotgunner', 'splitter');
       if (wave >= 8) pool.push('sniper', 'bruiser');
-      const groupSize = Math.min(state.enemyCap - liveEnemies, randInt(3, 5));
+      const groupSize = Math.min(state.enemyCap - liveEnemies, randInt(6, 10));
       // 同一方向
       const groupAng = randRange(0, Math.PI * 2);
       for (let i = 0; i < groupSize; i++) {
-        spawnEnemyAt(state, randPick(pool), groupAng, i * 0.15);
+        spawnEnemyAt(state, randPick(pool), groupAng, i * 0.1);
       }
     }
   }

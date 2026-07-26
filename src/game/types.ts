@@ -239,8 +239,9 @@ export interface LightningEffect {
 export interface FireWallEffect {
   x: number;
   y: number;
-  width: number;
-  height: number;
+  width: number;   // 厚度（短边，沿玩家到墙方向）
+  height: number;  // 长度（长边，垂直于玩家到墙方向）
+  angle: number;   // 玩家到墙中心的方向角，墙体绕此旋转使长边垂直于该连线
   life: number;
   maxLife: number;
   damage: number;
@@ -251,8 +252,9 @@ export interface FireWallEffect {
 export interface IceWallEffect {
   x: number;
   y: number;
-  width: number;
-  height: number;
+  width: number;   // 厚度
+  height: number;  // 长度
+  angle: number;   // 玩家到墙中心的方向角
   life: number;
   maxLife: number;
   active: boolean;
