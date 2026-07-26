@@ -29,7 +29,7 @@ export default function HUD({ state }: HUDProps) {
                 style={{ width: `${bossHpRatio * 100}%` }}
               />
               <div className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold drop-shadow-md">
-                {Math.ceil(boss.hp)} / {boss.maxHp}
+                {Math.ceil(boss.hp)} / {Math.floor(boss.maxHp)}
               </div>
             </div>
           </div>
@@ -48,7 +48,7 @@ export default function HUD({ state }: HUDProps) {
           <div className="absolute inset-0 flex items-center justify-between px-3">
             <div className="flex items-center gap-1.5">
               <Heart className="w-3.5 h-3.5 text-red-200 drop-shadow" />
-              <span className="text-xs text-white font-mono font-bold drop-shadow">{Math.ceil(p.hp)} / {p.maxHp}</span>
+              <span className="text-xs text-white font-mono font-bold drop-shadow">{Math.ceil(p.hp)} / {Math.floor(p.maxHp)}</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1 text-white/90">
@@ -93,7 +93,7 @@ export default function HUD({ state }: HUDProps) {
               <span className="text-[10px] text-lime-100 font-mono font-bold">Lv.{p.level}</span>
             </div>
             <span className="text-[10px] text-lime-200/70 font-mono">
-              {Math.floor(p.exp)} / {p.maxExp}
+              {Math.floor(p.exp)} / {Math.floor(p.maxExp)}
             </span>
           </div>
         </div>

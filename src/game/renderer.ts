@@ -901,28 +901,26 @@ function drawEnemies(ctx: CanvasRenderingContext2D, state: GameState) {
       ctx.scale(s, s);
     }
 
-    // Boss蓄力冲锋路径高亮警示
+    // Boss蓄力冲锋路径高亮警示（使用相对坐标，因 ctx 已平移到 Boss 位置）
     if (e.type === 'boss' && e.bossChargeState === 'charging' && e.bossChargeDir) {
-      const chargeLen = 600;
-      const endX = e.x + e.bossChargeDir.x * chargeLen;
-      const endY = e.y + e.bossChargeDir.y * chargeLen;
+      const chargeLen = 360; // 与实际冲锋距离一致：dashSpeed(600) * dashTime(0.6)
+      const dirX = e.bossChargeDir.x;
+      const dirY = e.bossChargeDir.y;
       const pulse = Math.sin(Date.now() / 80) * 0.3 + 0.7;
       const halfW = e.radius * 0.9;
-      const perpX = -e.bossChargeDir.y;
-      const perpY = e.bossChargeDir.x;
-      const p1x = e.x + perpX * halfW, p1y = e.y + perpY * halfW;
-      const p2x = e.x - perpX * halfW, p2y = e.y - perpY * halfW;
-      const p3x = endX - perpX * halfW, p3y = endY - perpY * halfW;
-      const p4x = endX + perpX * halfW, p4y = endY + perpY * halfW;
+      const perpX = -dirY;
+      const perpY = dirX;
+      const endLX = dirX * chargeLen; // 终点相对坐标
+      const endLY = dirY * chargeLen;
       ctx.save();
       ctx.fillStyle = `rgba(255, 30, 30, ${pulse * 0.25})`;
       ctx.shadowColor = '#ff0000';
       ctx.shadowBlur = 25;
       ctx.beginPath();
-      ctx.moveTo(p1x, p1y);
-      ctx.lineTo(p2x, p2y);
-      ctx.lineTo(p3x, p3y);
-      ctx.lineTo(p4x, p4y);
+      ctx.moveTo(perpX * halfW, perpY * halfW);
+      ctx.lineTo(-perpX * halfW, -perpY * halfW);
+      ctx.lineTo(endLX - perpX * halfW, endLY - perpY * halfW);
+      ctx.lineTo(endLX + perpX * halfW, endLY + perpY * halfW);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = `rgba(255, 60, 60, ${pulse * 0.9})`;
@@ -932,13 +930,13 @@ function drawEnemies(ctx: CanvasRenderingContext2D, state: GameState) {
       ctx.lineWidth = 1.5;
       ctx.setLineDash([12, 8]);
       ctx.beginPath();
-      ctx.moveTo(e.x, e.y);
-      ctx.lineTo(endX, endY);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(endLX, endLY);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = `rgba(255, 0, 0, ${pulse * 0.6})`;
       ctx.beginPath();
-      ctx.arc(endX, endY, halfW * 0.6, 0, Math.PI * 2);
+      ctx.arc(endLX, endLY, halfW * 0.6, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.restore();
@@ -2561,16 +2559,17 @@ function drawOffscreenIndicators(ctx: CanvasRenderingContext2D, state: GameState
     ctx.rotate(ang);
 
     if (isBoss) {
-      // Boss：大箭头 + 骷髅标记
+      // Boss：大箭头 + 骷髅标记（放大1.8倍）
+      ctx.scale(1.8, 1.8);
       ctx.fillStyle = `rgba(255, 0, 0, ${pulse})`;
       ctx.shadowColor = '#ff0000';
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 18;
       // 箭头
       ctx.beginPath();
-      ctx.moveTo(8, 0);
-      ctx.lineTo(-6, -10);
-      ctx.lineTo(-2, 0);
-      ctx.lineTo(-6, 10);
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-7, -12);
+      ctx.lineTo(-3, 0);
+      ctx.lineTo(-7, 12);
       ctx.closePath();
       ctx.fill();
       ctx.shadowBlur = 0;
@@ -2578,35 +2577,36 @@ function drawOffscreenIndicators(ctx: CanvasRenderingContext2D, state: GameState
       ctx.rotate(-ang); // 取消旋转画骷髅
       ctx.fillStyle = `rgba(255, 220, 220, ${pulse})`;
       ctx.shadowColor = '#ff0000';
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 12;
       // 骷髅头圆形
       ctx.beginPath();
-      ctx.arc(0, -16, 7, 0, Math.PI * 2);
+      ctx.arc(0, -20, 9, 0, Math.PI * 2);
       ctx.fill();
       // 眼窝
       ctx.fillStyle = '#330000';
       ctx.beginPath();
-      ctx.arc(-2.5, -17, 1.8, 0, Math.PI * 2);
-      ctx.arc(2.5, -17, 1.8, 0, Math.PI * 2);
+      ctx.arc(-3, -21, 2.5, 0, Math.PI * 2);
+      ctx.arc(3, -21, 2.5, 0, Math.PI * 2);
       ctx.fill();
       // 牙齿
       ctx.strokeStyle = '#330000';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.moveTo(-3, -12);
-      ctx.lineTo(3, -12);
+      ctx.moveTo(-4, -15);
+      ctx.lineTo(4, -15);
       ctx.stroke();
       ctx.shadowBlur = 0;
     } else {
-      // 精英怪：小箭头
-      ctx.fillStyle = `rgba(255, 60, 60, ${pulse * 0.8})`;
+      // 精英怪：中箭头（放大1.5倍）
+      ctx.scale(1.5, 1.5);
+      ctx.fillStyle = `rgba(255, 60, 60, ${pulse * 0.85})`;
       ctx.shadowColor = '#ff3333';
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.moveTo(6, 0);
-      ctx.lineTo(-4, -7);
-      ctx.lineTo(-1, 0);
-      ctx.lineTo(-4, 7);
+      ctx.moveTo(8, 0);
+      ctx.lineTo(-5, -9);
+      ctx.lineTo(-2, 0);
+      ctx.lineTo(-5, 9);
       ctx.closePath();
       ctx.fill();
       ctx.shadowBlur = 0;

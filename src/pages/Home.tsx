@@ -36,11 +36,11 @@ export default function Home() {
         <div className="flex items-center gap-4 mb-4">
           <Crosshair className="w-12 h-12 text-[#e85913]" />
           <div>
-            <h1 className="text-5xl font-black tracking-wider text-white uppercase" style={{ fontFamily: 'Oswald, sans-serif' }}>
-              生存战线
+            <h1 className="text-5xl font-black tracking-wider text-white" style={{ fontFamily: 'Oswald, sans-serif' }}>
+              绿坎大战马勒戈壁
             </h1>
-            <p className="text-[#4a7c59] text-sm tracking-[0.3em] uppercase font-bold mt-1">
-              孤胆佣兵
+            <p className="text-[#4a7c59] text-sm tracking-[0.3em] font-bold mt-1">
+              荒原机甲生存战
             </p>
           </div>
         </div>
