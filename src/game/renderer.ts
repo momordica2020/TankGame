@@ -35,13 +35,20 @@ export function renderGame(ctx: CanvasRenderingContext2D, state: GameState, canv
     zoom = 1 + t * 1.5;
   }
 
+  // 清屏，防止 zoom<1 时未覆盖区域产生拖影
+  ctx.fillStyle = '#1a1410';
+  ctx.fillRect(0, 0, canvasW, canvasH);
+
   ctx.save();
   ctx.translate(canvasW / 2 + shakeX, canvasH / 2 + shakeY);
   if (zoom !== 1) ctx.scale(zoom, zoom);
   ctx.translate(-cam.x, -cam.y);
 
-  drawGround(ctx, state, cam, canvasW, canvasH);
-  drawTerrains(ctx, state, cam, canvasW, canvasH);
+  // 计算缩放后的实际视野世界尺寸，传给需要覆盖全屏的绘制函数
+  const vw = canvasW / zoom;
+  const vh = canvasH / zoom;
+  drawGround(ctx, state, cam, vw, vh);
+  drawTerrains(ctx, state, cam, vw, vh);
   drawIceWalls(ctx, state);
   drawFireWalls(ctx, state);
   drawPickups(ctx, state);
