@@ -348,6 +348,7 @@ export interface GameState {
   deathDebris: { x: number; y: number; vx: number; vy: number; rot: number; vr: number; size: number; color: string; life?: number }[];
   bossSpawnCount: number;
   waveDifficultyMult: number;
+  difficultyAdjustTimer: number;
   bossBombs: { x: number; y: number; timer: number; maxTimer: number; radius: number; damage: number; active: boolean }[];
 }
 

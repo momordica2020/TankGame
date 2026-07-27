@@ -60,6 +60,14 @@ export function pointInPolygon(px: number, py: number, tx: number, ty: number, v
   return inside;
 }
 
+// 点到经过 (lx,ly) 方向 lang 的直线的距离
+export function pointLineDistance(px: number, py: number, lx: number, ly: number, lang: number): number {
+  const dx = px - lx;
+  const dy = py - ly;
+  // 沿 lang 法线投影
+  return Math.abs(-Math.sin(lang) * dx + Math.cos(lang) * dy);
+}
+
 // 圆-多边形碰撞检测
 export function circlePolygonCollision(
   cx: number, cy: number, cr: number,
